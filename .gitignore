@@ -42,3 +42,32 @@ build/
 # ---------------------------------------------------------------------------
 .claude/settings.local.json
 .mcp.json
+
+# ---------------------------------------------------------------------------
+# Credential hardening
+#
+# These paths do not exist yet. The rules precede them deliberately — an ignore
+# rule only protects a file it was written before.
+# ---------------------------------------------------------------------------
+
+# Private keys and certificates (config.toml references ../certs/my-key.pem)
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+certs/
+
+# Supabase JWT signing keys — config.toml: "DO NOT commit your signing keys file"
+signing_keys.json
+**/signing_keys.json
+
+# Tool credentials
+.envrc
+.npmrc
+.netrc
+.pgpass
+
+# Expo and editor local state
+.expo/
+.vscode/settings.json
