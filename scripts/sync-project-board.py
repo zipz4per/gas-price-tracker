@@ -53,6 +53,13 @@ PROPOSED, IN_PROGRESS, READY, DONE = (
 )
 
 ISSUE_TITLE_PREFIX = "[change] "
+
+# Labels are derived like everything else: a change's specs/ directory names
+# the capabilities it touches, and a change declaring skip_specs is tooling.
+CAPABILITY_LABEL_PREFIX = "capability: "
+TOOLING_LABEL = "tooling"
+CAPABILITY_LABEL_COLOR = "0e8a16"
+TOOLING_LABEL_COLOR = "5319e7"
 ARCHIVE_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -77,6 +84,8 @@ class Change:
     archived: bool
     done: int
     total: int
+    capabilities: tuple[str, ...] = ()
+    skip_specs: bool = False
 
     @property
     def status(self) -> str:
@@ -96,6 +105,17 @@ class Change:
     def progress(self) -> str:
         return f"{self.done}/{self.total}" if self.total else "no tasks"
 
+    @property
+    def labels(self) -> list[str]:
+        """A change touching specs is labelled by capability; one declaring
+        skip_specs is tooling. Both are read from the change itself, so the
+        labels cannot fall out of step with what the change actually does."""
+        if self.capabilities:
+            return [f"{CAPABILITY_LABEL_PREFIX}{c}" for c in self.capabilities]
+        if self.skip_specs:
+            return [TOOLING_LABEL]
+        return []
+
 
 def count_tasks(change_dir: Path) -> tuple[int, int]:
     """Count completed vs total tasks. A change with no tasks.md is not an
@@ -109,6 +129,20 @@ def count_tasks(change_dir: Path) -> tuple[int, int]:
     return done, done + todo
 
 
+def read_capabilities(change_dir: Path) -> tuple[str, ...]:
+    specs = change_dir / "specs"
+    if not specs.is_dir():
+        return ()
+    return tuple(sorted(p.parent.name for p in specs.rglob("spec.md")))
+
+
+def reads_skip_specs(change_dir: Path) -> bool:
+    cfg = change_dir / ".openspec.yaml"
+    if not cfg.is_file():
+        return False
+    return "skip_specs: true" in cfg.read_text(encoding="utf-8")
+
+
 def discover_changes() -> list[Change]:
     changes: list[Change] = []
 
@@ -116,7 +150,8 @@ def discover_changes() -> list[Change]:
         if not d.is_dir() or d.name == "archive":
             continue
         done, total = count_tasks(d)
-        changes.append(Change(d.name, d, False, done, total))
+        changes.append(Change(d.name, d, False, done, total,
+                              read_capabilities(d), reads_skip_specs(d)))
 
     for d in sorted(ARCHIVE_DIR.iterdir()) if ARCHIVE_DIR.is_dir() else []:
         if not d.is_dir():
@@ -125,7 +160,8 @@ def discover_changes() -> list[Change]:
         # name is what the issue title must match, so strip it.
         name = ARCHIVE_DATE_RE.sub("", d.name)
         done, total = count_tasks(d)
-        changes.append(Change(name, d, True, done, total))
+        changes.append(Change(name, d, True, done, total,
+                              read_capabilities(d), reads_skip_specs(d)))
 
     return changes
 
@@ -165,7 +201,7 @@ def find_issue(title: str) -> dict | None:
     recreates it rather than failing on a dangling reference."""
     raw = gh(
         "issue", "list", "--repo", REPO, "--state", "all",
-        "--limit", "200", "--json", "number,title,state,body,url,assignees",
+        "--limit", "200", "--json", "number,title,state,body,url,assignees,labels",
     )
     for issue in json.loads(raw or "[]"):
         if issue["title"] == title:
@@ -192,6 +228,28 @@ def project_items() -> dict[str, str]:
     return items
 
 
+def ensure_labels(changes: list[Change]) -> None:
+    """Create any label the sync is about to use. --force makes this
+    idempotent: it updates an existing label rather than failing."""
+    wanted: dict[str, tuple[str, str]] = {}
+    for change in changes:
+        for label in change.labels:
+            if label.startswith(CAPABILITY_LABEL_PREFIX):
+                cap = label[len(CAPABILITY_LABEL_PREFIX):]
+                wanted[label] = (CAPABILITY_LABEL_COLOR,
+                                 f"Changes affecting the {cap} capability")
+            else:
+                wanted[label] = (TOOLING_LABEL_COLOR,
+                                 "Tooling or scaffolding; no product behaviour change")
+    existing = {l["name"] for l in json.loads(
+        gh("label", "list", "--repo", REPO, "--limit", "100", "--json", "name") or "[]")}
+    for name, (color, desc) in sorted(wanted.items()):
+        if name not in existing:
+            gh("label", "create", name, "--repo", REPO,
+               "--color", color, "--description", desc, "--force")
+            print(f"  label created: {name}")
+
+
 def sync(dry_run: bool) -> int:
     changes = discover_changes()
     if not changes:
@@ -199,6 +257,8 @@ def sync(dry_run: bool) -> int:
         return 1
 
     print(f"Found {len(changes)} change(s)\n")
+    if not dry_run:
+        ensure_labels(changes)
     on_board = {} if dry_run else project_items()
     actions = 0
 
@@ -209,6 +269,8 @@ def sync(dry_run: bool) -> int:
 
         print(f"  {change.name}")
         print(f"    status   {change.status}  ({change.progress})")
+        if change.labels:
+            print(f"    labels   {', '.join(change.labels)}")
 
         if dry_run:
             print(f"    issue    {'update' if issue else 'create'} (dry run)")
@@ -220,9 +282,11 @@ def sync(dry_run: bool) -> int:
                 "issue", "create", "--repo", REPO,
                 "--title", change.issue_title, "--body", body,
                 "--assignee", ISSUE_ASSIGNEE,
+                *sum((["--label", l] for l in change.labels), []),
             ).splitlines()[-1]
             issue = {"url": url, "number": url.rsplit("/", 1)[-1], "state": "OPEN",
-                     "body": body, "assignees": [{"login": ISSUE_ASSIGNEE}]}
+                     "body": body, "assignees": [{"login": ISSUE_ASSIGNEE}],
+                     "labels": [{"name": l} for l in change.labels]}
             print(f"    issue    created {url}")
             actions += 1
         else:
@@ -233,6 +297,14 @@ def sync(dry_run: bool) -> int:
                 actions += 1
             else:
                 print(f"    issue    up to date")
+
+        have = {l["name"] for l in issue.get("labels", [])}
+        missing = [l for l in change.labels if l not in have]
+        if missing:
+            gh("issue", "edit", str(issue["number"]), "--repo", REPO,
+               *sum((["--add-label", l] for l in missing), []))
+            print(f"    issue    labelled {', '.join(missing)}")
+            actions += 1
 
         assignees = {a["login"] for a in issue.get("assignees", [])}
         if ISSUE_ASSIGNEE not in assignees:

@@ -19,6 +19,7 @@
 - [x] 3.3 Update an existing issue's body when task state has changed; verify ticking a task and re-running moves the issue's progress bar
 - [x] 3.4 Close the issue for any archived change and reopen nothing; verify the three archived changes have closed issues and the active one remains open
 - [x] 3.5 Assign every synced issue to the repository owner, skipping any already assigned; verify all five issues show `zipz4per` in the board's Assignees column and that a second run reports no assignment changes
+- [x] 3.6 Derive labels from each change — `capability: <name>` per spec directory, `tooling` when the change declares `skip_specs` — creating any missing label in the repository first; verify the three capability-bearing changes carry the right capability label, the two `skip_specs` changes carry `tooling`, and a second run reports no label changes
 
 ## 4. Board synchronisation
 

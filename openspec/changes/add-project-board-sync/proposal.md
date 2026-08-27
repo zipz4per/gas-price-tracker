@@ -22,6 +22,7 @@ Because this is derived rather than maintained, the board cannot drift from real
 - **Close the issue when its change is archived**, so the card lands in `Done` and the repository's issue list reflects completed work.
 - **Link the project to the repository** so it is reachable from the repo's Projects tab.
 - **Assign every issue to the repository owner**, so the board's Assignees column is populated and filtering by assignee returns the whole project rather than nothing.
+- **Derive labels from each change's capabilities** — `capability: <name>` for every spec the change touches, and `tooling` for changes that declare `skip_specs`. Missing labels are created on demand, so the scheme needs no setup.
 
 ### Explicitly out of scope
 
