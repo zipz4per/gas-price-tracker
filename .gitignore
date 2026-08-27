@@ -1,0 +1,34 @@
+# ---------------------------------------------------------------------------
+# Credentials
+#
+# The Supabase service-role key bypasses Row-Level Security entirely. This
+# repository is public, so a key that reaches its history can only be remedied
+# by rotating the key — deleting the commit does not reach forks or caches.
+# Keep every credential in .env.local, which is never committed.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# ---------------------------------------------------------------------------
+# Supabase CLI local state
+#
+# .temp/ holds the linked project ref and CLI scratch state; .branches/ holds
+# local branch databases. Neither belongs in version control.
+# Migrations and config.toml DO belong in version control.
+# ---------------------------------------------------------------------------
+supabase/.temp/
+supabase/.branches/
+
+# ---------------------------------------------------------------------------
+# Dependencies and build output
+# ---------------------------------------------------------------------------
+node_modules/
+dist/
+build/
+
+# ---------------------------------------------------------------------------
+# Editor and OS noise
+# ---------------------------------------------------------------------------
+.DS_Store
+*.log
