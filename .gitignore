@@ -32,3 +32,13 @@ build/
 # ---------------------------------------------------------------------------
 .DS_Store
 *.log
+
+# ---------------------------------------------------------------------------
+# Claude Code local state
+#
+# settings.local.json holds machine-specific permissions/paths; .mcp.json
+# (if added) can carry credentials. commands/ and skills/ are shared and
+# belong in version control.
+# ---------------------------------------------------------------------------
+.claude/settings.local.json
+.mcp.json
