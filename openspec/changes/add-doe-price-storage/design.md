@@ -7,7 +7,7 @@ The constraints below come from inspecting the two live DOE documents, not from 
 - **Naive text extraction is unusable.** Extracted linearly, the CALABARZON report yields price rows with no city attached — every locality label appears exactly once, in a block far from the numbers. Worse, brands with no data emit nothing at all, so field counts vary row to row and a positional parser silently attributes prices to the wrong brand.
 - **Coordinate-based extraction works.** Matching word y-position to product row and x-position to brand column recovers the table correctly, including the gaps that carry meaning.
 - **Reporting periods differ**: NCR publishes `For the week of August 18-24, 2026` (7 days), CALABARZON `DATE MONITORING: August 18 - 20, 2026` (3 days).
-- **Absent values have four spellings**: an unavailable marker, the literal `None`, `0.00`, and `No LFRO`.
+- **Absent values have four spellings**: an unavailable marker, the literal `None`, `0.00`, and `No LFRO`. The first three are cell-level "no figure"; `No LFRO` is **per brand within a locality** and means that brand does not operate there. Tanauan City's RON 91 row marks Unioil, Seaoil, and PTT as `No LFRO` while five other brands report prices in the same row.
 - **Kerosene runs ₱113–₱134** while gasoline sits at ₱65–₱95.
 
 Ingestion here is manual. This design's obligation to the future parser is to leave a clean seam, not to accommodate it now.
@@ -79,6 +79,16 @@ Rather than a column per brand, each fuel type gets one row per brand present, p
 Both dates are stored, alongside the period label exactly as the document expresses it.
 
 *Why:* the PRD's `report_week_start` / `report_week_end` assumes a week. CALABARZON reports a 3-day window. Naming the field for a week and storing a 3-day span in it would make every downstream "DOE data as of week of…" statement a small lie. Keeping the verbatim label means the app can render what the document actually said.
+
+### Brand coverage varies by locality, so `No LFRO` is stored per brand
+
+`No LFRO` is recorded against the brand it appears under, not against the locality. A locality becomes `no_outlet` only when every brand in it is marked that way.
+
+*Why:* the source publishes this marker **inside brand columns**. Tanauan City's RON 91 row carries `No LFRO` under Unioil, Seaoil, and PTT while Petron, Shell, Caltex, Total, and Flying V all report prices. Treating any `No LFRO` as a locality-level fact — which an earlier draft of this design did — would have discarded those five real prices and reported Tanauan City as having no stations. Tanauan is Malvar's proxy source, so Malvar would have shown nothing at all, with no error raised.
+
+It also carries information worth keeping: "Unioil does not operate in this town" is a different and more useful fact than "Unioil's price was unavailable this week", and a driver comparing brands benefits from the distinction.
+
+*Alternative rejected:* treating `No LFRO` as an ordinary absent value. Simpler, and it collapses a real distinction the source went to the trouble of publishing.
 
 ### Price plausibility bounds are per fuel type
 

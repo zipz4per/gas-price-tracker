@@ -54,9 +54,11 @@ Reporting periods MUST NOT be assumed to be one week. Period length varies betwe
 
 ### Requirement: Absent and unavailable values are normalized
 
-Source documents express missing data in several ways, including an unavailable marker, a literal `None`, a zero value, and a marker denoting that a locality has no fuel retail outlet at all. The system SHALL normalize these into explicit states and MUST NOT store any of them as a real price.
+Source documents express missing data in several ways, including an unavailable marker, a literal `None`, a zero value, and a marker denoting that a brand has no fuel retail outlet in a locality. The system SHALL normalize these into explicit states and MUST NOT store any of them as a real price.
 
-A locality marked as having no retail outlet MUST be distinguishable from a locality for which data is merely missing.
+Brand coverage varies by locality: not every brand operates in every town. The no-retail-outlet marker is published **per brand within a locality**, and means that brand does not exist there. A brand marked as having no outlet MUST be distinguishable from a brand that operates in the locality but had no price reported.
+
+A locality in which every brand is marked as having no retail outlet SHALL itself be recorded as having no retail outlet.
 
 #### Scenario: Unavailable markers are not stored as prices
 
@@ -70,9 +72,24 @@ A locality marked as having no retail outlet MUST be distinguishable from a loca
 - **THEN** the range is recorded as absent
 - **AND** no zero-peso price is retrievable for that combination
 
-#### Scenario: No retail outlet is a distinct state
+#### Scenario: A brand with no outlet is a distinct state from a brand with no price
 
-- **GIVEN** a source row marks a locality as having no liquid fuel retail outlet
+- **GIVEN** a locality's fuel type row marks some brands as having no liquid fuel retail outlet while other brands in the same row report prices
+- **WHEN** reference data for that locality and fuel type is retrieved
+- **THEN** the brands marked as having no outlet are reported as not operating in that locality
+- **AND** this is distinguishable from a brand whose price was merely unavailable
+- **AND** the prices reported by the other brands in that row are retained in full
+
+#### Scenario: Brands absent from a locality do not suppress its other brands
+
+- **GIVEN** the Tanauan City RON 91 row marks Unioil, Seaoil, and PTT as having no outlet while Petron, Shell, Caltex, Total, and Flying V report prices
+- **WHEN** reference data for Tanauan City and RON 91 is retrieved
+- **THEN** the five reporting brands' prices are all present
+- **AND** the locality is not treated as having no retail outlet
+
+#### Scenario: A locality where every brand has no outlet is itself a no-outlet locality
+
+- **GIVEN** a source row marks every brand in a locality as having no liquid fuel retail outlet
 - **WHEN** reference data for that locality is retrieved
 - **THEN** the result reports that the locality has no retail outlet
 - **AND** this is distinguishable from data being unavailable
