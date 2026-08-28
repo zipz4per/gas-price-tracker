@@ -15,13 +15,13 @@ The failure is silent by construction. `has_data = false` is a legitimate docume
 Against the local stack, with Malvar reference data loaded:
 
 ```
-  input                      actual                    expected
-  ─────────────────────────────────────────────────────────────────────────
-  ('Malvar','RON_95')        7 rows, has_data = t      7 rows              ✓
-  ('Malvar','RON 95')        1 row,  has_data = f      recognised, or told
-  ('Malvar','ron_95')        1 row,  has_data = f      recognised, or told
-  ('Malvar','BANANA')        1 row,  has_data = f      told it is not a fuel
-  ('Atlantis','RON_95')      0 rows                    0 rows              ✓
+  input                      actual                    expected                 after the fix
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  ('Malvar','RON_95')        7 rows, has_data = t      7 rows              ✓    7 rows, has_data = t
+  ('Malvar','RON 95')        1 row,  has_data = f      recognised, or told      7 rows, has_data = t
+  ('Malvar','ron_95')        1 row,  has_data = f      recognised, or told      7 rows, has_data = t
+  ('Malvar','BANANA')        1 row,  has_data = f      told it is not a fuel    error, HTTP 400
+  ('Atlantis','RON_95')      0 rows                    0 rows              ✓    error, HTTP 400
 ```
 
 ```sql
@@ -65,11 +65,17 @@ The reasoning is correct for a real fuel type with no rows, and the branch it de
 
 ## Fixed by
 
-_Pending._
+`fix-unrecognised-read-inputs` — migration `20260829120000_recognise_read_path_inputs.sql`.
 
 ## What the fix changed
 
-_Pending._
+The read path recognises both of its arguments before answering. A fuel type resolves through `normalize_locality_label()` — the same normalization localities already use, so `RON 95`, `ron_95` and `RON_95` all reach `RON_95` — and a value that normalizes to no registered code raises rather than being answered. The same now applies to an unregistered locality, which previously returned a silent empty set.
+
+It raises rather than adding a third state to the result. A `recognised` flag beside `has_data` would put a caller-error signal into every successful row's shape, and a caller who ignores `has_data` today would ignore `recognised` tomorrow — the response would again be well-formed and wrong. Both rejections carry SQLSTATE `22023`, which PostgREST answers as HTTP 400, so they are distinguishable from a server fault.
+
+Rows now carry the registered code rather than the requested spelling. The old no-data row echoed `p_fuel_type` verbatim, so a caller could receive their own typo back as though the system had endorsed it.
+
+The scenario that would catch a regression is **An unknown fuel type is reported as unrecognised**, under the new requirement *An unrecognised request is distinct from an absent answer*. Two more guard the edges: **A near miss is not resolved to a neighbour**, so a future normalizer cannot quietly become fuzzy, and **Absence remains an answer, not a rejection**, so a future tightening cannot start rejecting requests it does in fact understand.
 
 ## Does this need a change?
 
@@ -79,6 +85,8 @@ The requirement worth adding is not about spelling. It is that **not understandi
 
 This also reaches `add-station-registry` task 5.4, whose station read path returns a no-reference-data marker and would inherit the same ambiguity.
 
+**As built, this stayed accurate.** The change added two requirements to `doe-reference-prices` and modified none. It also grew a second half the report did not anticipate: the same collapse sits on the locality argument, where it contradicts a `locality-registry` requirement already written — *"the system reports that the locality is not covered"* — which an empty result set does not do. That half was a defect against an existing promise rather than a silent spec, so it needed no new requirement of its own.
+
 ## Fix tasks
 
-_None — tracked in the change, once it is filed._
+_None — tracked in `fix-unrecognised-read-inputs`._
