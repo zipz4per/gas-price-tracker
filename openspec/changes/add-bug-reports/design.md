@@ -141,4 +141,8 @@ The one ordering constraint: the sync script must learn `[bug]` titles before th
 
 ## Open Questions
 
-- Whether `Impact` earns a section of its own or collapses into `What's broken`. Deferred deliberately — filing the fuel-type bug is what will answer it, and guessing now would settle it without evidence.
+None. The one this change carried — whether `Impact` earns a section of its own or collapses into `What's broken` — was deferred until the fuel-type bug filled it with real content, and it is now settled: **kept**.
+
+Filled in, `Impact` carried two things `What's broken` did not and should not. Blast radius: every consumer of the read path, which is currently the only way to get a DOE figure out of the database. And detectability: the failure is silent by construction, because `has_data = false` is a documented legitimate state, so a monitor watching for errors sees nothing and a developer reading the response sees a shape the spec explicitly blesses.
+
+Neither belongs in a description of the symptom. `What's broken` answers *have I hit this*; `Impact` answers *how much does it matter and would we ever notice*. The second question was the one that made this bug worth filing before the frontend rather than after.

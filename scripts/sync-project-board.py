@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
 """Project the OpenSpec workflow onto a GitHub Project board.
 
-The board is DERIVED, never maintained. Every run recomputes each change's
-status and progress from `openspec/` — a change's directory says which column
-it belongs in, and its task checkboxes give its progress:
+The board is DERIVED, never maintained. Every run recomputes each record's
+status and progress from `openspec/` — the directory a record sits in says
+which column it belongs in, and its task checkboxes give its progress:
 
     openspec/changes/<name>/           0 tasks done   ->  Proposed
     openspec/changes/<name>/           some done      ->  In Progress
     openspec/changes/<name>/           all done       ->  Ready to archive
     openspec/changes/archive/<name>/                  ->  Done
+
+Two kinds of record are projected. A change is a commitment, described by a
+proposal and tracked by tasks.md. A bug is an observation, described by a
+report and tracked by whatever fix tasks that report carries. They share the
+columns because their lifecycles are parallel:
+
+    openspec/changes/<name>/  ->  [change] <name>  ->  kind: feature
+    openspec/bugs/<name>/     ->  [bug] <name>     ->  kind: bug
 
 Because nothing is stored, the board cannot drift out of sync. The only way for
 it to be wrong is for openspec/ to be wrong, in which case it is faithfully
@@ -52,20 +60,34 @@ PROPOSED, IN_PROGRESS, READY, DONE = (
     "Done",
 )
 
-ISSUE_TITLE_PREFIX = "[change] "
+# What a record is. Derived from which tree it sits in and from nothing else:
+# the directory is the answer, completely, so there is no field to mistype and
+# no way for the label to disagree with the file it describes.
+FEATURE, BUG = "feature", "bug"
+KINDS = (FEATURE, BUG)
+TITLE_PREFIXES = {FEATURE: "[change] ", BUG: "[bug] "}
 
-# Labels are derived like everything else: a change's specs/ directory names
-# the capabilities it touches, and a change declaring skip_specs is tooling.
-# Two axes, filtered independently: `capability:` says what a change is about,
-# `layer:` says where the work lives. They are not alternatives — a change has
-# both, except a tooling change, which touches no capability. Collapsing them
-# into one field is what made `tooling` look like a capability.
+# Three axes, filtered independently. `capability:` says what a record is
+# about, `layer:` says where the work lives, `kind:` says whether it is work
+# or a defect. They are not alternatives — collapsing two of them into one
+# field is what once made `tooling` look like a capability.
+#
+# Two are declared and one is derived. A change's capabilities come from the
+# specs/ directory it writes deltas for, so they cannot disagree with it; a
+# bug has no specs/ directory and must declare a capability instead, which
+# makes it the one label on a bug that can be wrong. `layer:` is declared
+# because the sync reads only the planning directory and cannot tell client
+# work from server work by looking. `kind:` is derived, because location
+# answers it completely.
 CAPABILITY_LABEL_PREFIX = "capability: "
 LAYER_LABEL_PREFIX = "layer: "
-MANAGED_LABEL_PREFIXES = (CAPABILITY_LABEL_PREFIX, LAYER_LABEL_PREFIX)
+KIND_LABEL_PREFIX = "kind: "
+MANAGED_LABEL_PREFIXES = (
+    CAPABILITY_LABEL_PREFIX, LAYER_LABEL_PREFIX, KIND_LABEL_PREFIX,
+)
 
-# A closed set. An unrecognised value would otherwise flow into ensure_labels(),
-# which creates whatever it is handed, and the change would look correctly
+# Closed sets. An unrecognised value would otherwise flow into ensure_labels(),
+# which creates whatever it is handed, and the record would look correctly
 # labelled while carrying a label nobody else shares.
 LAYERS = ("backend", "frontend", "tooling")
 
@@ -75,6 +97,7 @@ LAYER_LABEL_COLORS = {
     "frontend": "d93f0b",
     "tooling": "5319e7",  # the colour the retired bare `tooling` label used
 }
+KIND_LABEL_COLORS = {FEATURE: "0052cc", BUG: "b60205"}
 ARCHIVE_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
 
 # A checkbox anywhere in an issue body is counted by GitHub's task-list
@@ -87,8 +110,20 @@ CHECKBOX_RE = re.compile(r"^- \[[ xX]\] ")
 NON_PROSE_PREFIXES = ("-", "*", "+", "#", ">", "|")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CHANGES_DIR = REPO_ROOT / "openspec" / "changes"
+OPENSPEC_DIR = REPO_ROOT / "openspec"
+CHANGES_DIR = OPENSPEC_DIR / "changes"
+BUGS_DIR = OPENSPEC_DIR / "bugs"
+SPECS_DIR = OPENSPEC_DIR / "specs"
+
+# Each tree keeps its own archive, so an archived bug and an archived change
+# are found the same way.
 ARCHIVE_DIR = CHANGES_DIR / "archive"
+BUGS_ARCHIVE_DIR = BUGS_DIR / "archive"
+
+# The document a record is described by. A change is described by a proposal
+# and tracked by tasks.md; a bug is one file that is both.
+DOC_FILE = {FEATURE: "proposal.md", BUG: "report.md"}
+TASK_FILE = {FEATURE: "tasks.md", BUG: "report.md"}
 
 
 def gh(*args: str, check: bool = True) -> str:
@@ -102,9 +137,16 @@ def gh(*args: str, check: bool = True) -> str:
 
 
 @dataclass
-class Change:
+class Record:
+    """A change or a bug — everything the board projects.
+
+    One type, because the board treats them the same way: a column derived
+    from progress, an issue derived from a document, three derived labels. The
+    differences are which file describes it and which file its tasks live in,
+    and those are looked up from `kind`."""
     name: str
     path: Path
+    kind: str
     archived: bool
     done: int
     total: int
@@ -124,7 +166,11 @@ class Change:
 
     @property
     def issue_title(self) -> str:
-        return f"{ISSUE_TITLE_PREFIX}{self.name}"
+        return f"{TITLE_PREFIXES[self.kind]}{self.name}"
+
+    @property
+    def doc_path(self) -> Path:
+        return self.path / DOC_FILE[self.kind]
 
     @property
     def progress(self) -> str:
@@ -132,19 +178,22 @@ class Change:
 
     @property
     def labels(self) -> list[str]:
-        """Both axes together. Capabilities come from the change's specs/
-        directory and the layer from its .openspec.yaml, so neither can fall
-        out of step with what the change actually is."""
+        """All three axes together. Capabilities come from a change's specs/
+        directory or a bug's declaration, the layer from .openspec.yaml, and
+        the kind from which tree the record sits in, so none of them can fall
+        out of step with what the record actually is."""
         labels = [f"{CAPABILITY_LABEL_PREFIX}{c}" for c in self.capabilities]
         if self.layer:
             labels.append(f"{LAYER_LABEL_PREFIX}{self.layer}")
+        labels.append(f"{KIND_LABEL_PREFIX}{self.kind}")
         return labels
 
 
-def count_tasks(change_dir: Path) -> tuple[int, int]:
-    """Count completed vs total tasks. A change with no tasks.md is not an
-    error — some changes are pure planning — so it reports zero progress."""
-    tasks = change_dir / "tasks.md"
+def count_tasks(record_dir: Path, filename: str) -> tuple[int, int]:
+    """Count completed vs total tasks. A record with no task file is not an
+    error — some changes are pure planning, and a bug whose fix lives in a
+    change tracks its tasks there — so it reports zero progress."""
+    tasks = record_dir / filename
     if not tasks.is_file():
         return 0, 0
     text = tasks.read_text(encoding="utf-8")
@@ -154,6 +203,7 @@ def count_tasks(change_dir: Path) -> tuple[int, int]:
 
 
 def read_capabilities(change_dir: Path) -> tuple[str, ...]:
+    """A change's capabilities, derived from the deltas it writes."""
     specs = change_dir / "specs"
     if not specs.is_dir():
         return ()
@@ -167,50 +217,70 @@ def reads_skip_specs(change_dir: Path) -> bool:
     return "skip_specs: true" in cfg.read_text(encoding="utf-8")
 
 
-LAYER_RE = re.compile(r"(?m)^layer:\s*(\S+)\s*$")
+def _declared(record_dir: Path, field: str) -> str:
+    """A single scalar field from .openspec.yaml, or "" when absent.
+
+    Deliberately not a YAML parse: the sync reads three flat scalars and
+    depending on a parser to do that would be the larger risk."""
+    cfg = record_dir / ".openspec.yaml"
+    if not cfg.is_file():
+        return ""
+    found = re.search(rf"(?m)^{field}:\s*(\S+)\s*$",
+                      cfg.read_text(encoding="utf-8"))
+    return found.group(1) if found else ""
 
 
-def read_layer(change_dir: Path) -> str:
-    """The layer a change declares, or "" when it declares none.
+def read_layer(record_dir: Path) -> str:
+    """The layer a record declares, or "" when it declares none.
 
     Declared rather than derived: the sync reads only the planning directory,
     never a diff, so nothing here can tell client work from server work by
     looking. Validation happens in preflight, where a bad value can stop the
     run before it reaches ensure_labels()."""
-    cfg = change_dir / ".openspec.yaml"
-    if not cfg.is_file():
-        return ""
-    found = LAYER_RE.search(cfg.read_text(encoding="utf-8"))
-    return found.group(1) if found else ""
+    return _declared(record_dir, "layer")
 
 
-def discover_changes() -> list[Change]:
-    changes: list[Change] = []
+def read_declared_capability(bug_dir: Path) -> tuple[str, ...]:
+    """A bug's capability, which it must declare.
 
-    for d in sorted(CHANGES_DIR.iterdir()) if CHANGES_DIR.is_dir() else []:
-        if not d.is_dir() or d.name == "archive":
-            continue
-        done, total = count_tasks(d)
-        changes.append(Change(d.name, d, False, done, total,
-                              read_capabilities(d), reads_skip_specs(d),
-                              read_layer(d)))
+    A change derives this from the specs/ directory it writes deltas for, so
+    the two cannot disagree. A bug has no specs/ directory — it is a record
+    about behaviour that already exists — so it declares one instead, and
+    preflight checks the value names a real capability."""
+    declared = _declared(bug_dir, "capability")
+    return (declared,) if declared else ()
 
-    for d in sorted(ARCHIVE_DIR.iterdir()) if ARCHIVE_DIR.is_dir() else []:
-        if not d.is_dir():
-            continue
-        # Archived directories carry a YYYY-MM-DD- prefix; the change's real
+
+def discover_records() -> list[Record]:
+    """Both trees, active and archived."""
+    records: list[Record] = []
+
+    def add(d: Path, kind: str, archived: bool) -> None:
+        # Archived directories carry a YYYY-MM-DD- prefix; the record's real
         # name is what the issue title must match, so strip it.
-        name = ARCHIVE_DATE_RE.sub("", d.name)
-        done, total = count_tasks(d)
-        changes.append(Change(name, d, True, done, total,
-                              read_capabilities(d), reads_skip_specs(d),
-                              read_layer(d)))
+        name = ARCHIVE_DATE_RE.sub("", d.name) if archived else d.name
+        done, total = count_tasks(d, TASK_FILE[kind])
+        caps = (read_capabilities(d) if kind == FEATURE
+                else read_declared_capability(d))
+        records.append(Record(name, d, kind, archived, done, total,
+                              caps, reads_skip_specs(d), read_layer(d)))
 
-    return changes
+    for root, kind, archive in (
+        (CHANGES_DIR, FEATURE, ARCHIVE_DIR),
+        (BUGS_DIR, BUG, BUGS_ARCHIVE_DIR),
+    ):
+        for d in sorted(root.iterdir()) if root.is_dir() else []:
+            if d.is_dir() and d.name != "archive":
+                add(d, kind, archived=False)
+        for d in sorted(archive.iterdir()) if archive.is_dir() else []:
+            if d.is_dir():
+                add(d, kind, archived=True)
+
+    return records
 
 
-class ProposalError(RuntimeError):
-    """A proposal that cannot supply a description.
+class DocumentError(RuntimeError):
+    """A proposal or report that cannot supply a description.
 
     Raised during preflight, before anything is written, because the
     alternative — publishing whatever the parse happened to return — produces
@@ -223,6 +293,24 @@ class Description:
     lead: str
     changes: tuple[str, ...]
     out_of_scope: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class BugReport:
+    """The parts of a report that get published on its issue.
+
+    `caused_by` and `fixed_by` are single lines and are published together,
+    because a defect that shipped broken and one that was working until a
+    known commit are different findings, and seeing only one of them invites
+    the wrong conclusion."""
+    broken: str
+    impact: tuple[str, ...]
+    reproduction: tuple[str, ...]
+    root_cause: tuple[str, ...]
+    caused_by: str
+    fixed_by: str
+    needs_change: tuple[str, ...]
+    fix_tasks: tuple[str, ...]
 
 
 def _section(lines: list[str], heading: str) -> list[str] | None:
@@ -261,20 +349,50 @@ def _bullets(lines: list[str] | None) -> tuple[str, ...]:
     return tuple(l.rstrip() for l in (lines or []) if l.startswith("- "))
 
 
-def extract_description(change: Change) -> Description:
-    """Read a change's published description out of its proposal.
+def _trimmed(lines: list[str] | None) -> tuple[str, ...]:
+    """A section kept verbatim, with blank lines trimmed from both ends."""
+    kept = list(lines or [])
+    while kept and not kept[0].strip():
+        kept.pop(0)
+    while kept and not kept[-1].strip():
+        kept.pop()
+    return tuple(l.rstrip() for l in kept)
 
-    Nothing here is inferred or repaired. Every failure raises, because the
-    failures this guards against are the quiet ones: a summary that is merely
-    plausible reads exactly like a correct one."""
-    path = change.path / "proposal.md"
+
+def _where(path: Path) -> str:
     try:
-        where = path.relative_to(REPO_ROOT).as_posix()
+        return path.relative_to(REPO_ROOT).as_posix()
     except ValueError:  # outside the repo; the absolute path is still useful
-        where = str(path)
+        return str(path)
 
-    def fail(problem: str) -> ProposalError:
-        return ProposalError(f"{change.name}: {problem} ({where})")
+
+def _no_checkboxes(lines, fail) -> None:
+    """A checkbox anywhere in published prose is counted by GitHub's task-list
+    progress bar, so it would inflate an issue's task count while the board's
+    own count — read from the record's task file — stayed right."""
+    for line in lines:
+        if CHECKBOX_RE.match(line):
+            raise fail(
+                f"published text contains a checkbox: {line.strip()[:48]!r}; "
+                "GitHub would count it in the issue's task-list progress"
+            )
+
+
+def extract_description(record: Record) -> Description | BugReport:
+    """Read a record's published description out of the document that
+    describes it. Nothing here is inferred or repaired. Every failure raises,
+    because the failures this guards against are the quiet ones: a summary
+    that is merely plausible reads exactly like a correct one."""
+    return (_extract_proposal if record.kind == FEATURE
+            else _extract_report)(record)
+
+
+def _extract_proposal(record: Record) -> Description:
+    path = record.doc_path
+    where = _where(path)
+
+    def fail(problem: str) -> DocumentError:
+        return DocumentError(f"{record.name}: {problem} ({where})")
 
     if not path.is_file():
         raise fail("no proposal.md")
@@ -300,40 +418,134 @@ def extract_description(change: Change) -> Description:
         raise fail("'## What Changes' has no top-level bullets")
 
     out_of_scope = _bullets(_section(lines, "### Explicitly out of scope"))
-
-    for line in (*lead, *changes, *out_of_scope):
-        if CHECKBOX_RE.match(line):
-            raise fail(
-                f"published text contains a checkbox: {line.strip()[:48]!r}; "
-                "GitHub would count it in the issue's task-list progress"
-            )
-
+    _no_checkboxes((*lead, *changes, *out_of_scope), fail)
     return Description(" ".join(lead), changes, out_of_scope)
 
 
-def check_layer(change: Change) -> list[str]:
-    """Validate a change's declared layer, returning problems rather than
-    raising, so one pass can report every change that needs attention.
+# Sections a report must carry. Each is required even when its answer is not
+# yet known, because a report keeps a pending marker rather than a blank —
+# an absent section reads as an oversight, a pending one as a stage not
+# reached.
+REPORT_SECTIONS = (
+    "## What's broken",
+    "## Impact",
+    "## Reproduction",
+    "## Root cause",
+    "## Caused by",
+    "## Fixed by",
+    "## Does this need a change?",
+)
 
-    An undeclared layer is an omission and an unrecognised one is a typo, and
+
+def _extract_report(record: Record) -> BugReport:
+    path = record.doc_path
+    where = _where(path)
+
+    def fail(problem: str) -> DocumentError:
+        return DocumentError(f"{record.name}: {problem} ({where})")
+
+    if not path.is_file():
+        raise fail("no report.md")
+    lines = path.read_text(encoding="utf-8").splitlines()
+
+    found = {h: _section(lines, h) for h in REPORT_SECTIONS}
+    missing = [h for h, body in found.items() if body is None]
+    if missing:
+        raise fail(f"report is missing {', '.join(repr(h) for h in missing)}")
+
+    broken = _lead_paragraph(found["## What's broken"])
+    if not broken:
+        raise fail("\"## What's broken\" has no opening paragraph")
+    if broken[0].lstrip().startswith(NON_PROSE_PREFIXES):
+        raise fail(
+            f"\"## What's broken\" opens with {broken[0].strip()[:48]!r} rather "
+            "than prose; its first paragraph is published as the issue "
+            "description"
+        )
+
+    reproduction = _trimmed(found["## Reproduction"])
+    if not reproduction:
+        raise fail(
+            "'## Reproduction' is empty; a report nobody else can reproduce "
+            "is a claim, not a finding"
+        )
+
+    def one_line(heading: str) -> str:
+        para = _lead_paragraph(found[heading])
+        if not para:
+            raise fail(f"{heading!r} is empty; use its pending marker instead")
+        return " ".join(l.strip() for l in para)
+
+    report = BugReport(
+        broken=" ".join(broken),
+        impact=_trimmed(found["## Impact"]),
+        reproduction=reproduction,
+        root_cause=_trimmed(found["## Root cause"]),
+        caused_by=one_line("## Caused by"),
+        fixed_by=one_line("## Fixed by"),
+        needs_change=_trimmed(found["## Does this need a change?"]),
+        fix_tasks=_trimmed(_section(lines, "## Fix tasks")),
+    )
+    _no_checkboxes(
+        (report.broken, *report.impact, *report.reproduction,
+         *report.root_cause, report.caused_by, report.fixed_by,
+         *report.needs_change),
+        fail,
+    )
+    return report
+
+
+def check_declarations(record: Record) -> list[str]:
+    """Validate what a record declares, returning problems rather than
+    raising, so one pass can report everything that needs attention.
+
+    An undeclared value is an omission and an unrecognised one is a typo, and
     both produce the same silent outcome if allowed through: a card that looks
     labelled and filters into nothing."""
-    cfg = (change.path / ".openspec.yaml")
-    try:
-        where = cfg.relative_to(REPO_ROOT).as_posix()
-    except ValueError:
-        where = str(cfg)
+    where = _where(record.path / ".openspec.yaml")
+    problems: list[str] = []
+
+    # `kind:` is derived from location. A declared one would be ignored, and
+    # an ignored declaration is worse than a rejected one: it reads as though
+    # it took effect.
+    if _declared(record.path, "kind"):
+        problems.append(
+            f"{record.name}: 'kind:' is declared but is derived from which "
+            f"tree the record sits in; remove it ({where})")
+
     allowed = ", ".join(LAYERS)
-    if not change.layer:
-        return [f"{change.name}: no 'layer:' declared; expected one of "
-                f"{allowed} ({where})"]
-    if change.layer not in LAYERS:
-        return [f"{change.name}: unrecognised layer {change.layer!r}; expected "
-                f"one of {allowed} ({where})"]
-    return []
+    if not record.layer:
+        problems.append(f"{record.name}: no 'layer:' declared; expected one of "
+                        f"{allowed} ({where})")
+    elif record.layer not in LAYERS:
+        problems.append(f"{record.name}: unrecognised layer {record.layer!r}; "
+                        f"expected one of {allowed} ({where})")
+
+    if record.kind == BUG:
+        # A bug declares its capability because it has no specs/ directory to
+        # derive one from, so this is the one label on a bug that can be
+        # wrong. Checking it against openspec/specs/ is what stops a typo from
+        # creating a brand-new label nobody else shares.
+        for cap in record.capabilities:
+            if not (SPECS_DIR / cap).is_dir():
+                problems.append(
+                    f"{record.name}: capability {cap!r} names no directory "
+                    f"under {_where(SPECS_DIR)}/ ({where})")
+        if not record.capabilities and record.layer != "tooling":
+            problems.append(
+                f"{record.name}: no 'capability:' declared; a bug has no "
+                f"specs/ directory to derive one from ({where})")
+
+    return problems
 
 
-def build_issue_body(change: Change, desc: Description) -> str:
+def build_issue_body(record: Record, desc: Description | BugReport) -> str:
+    if isinstance(desc, BugReport):
+        return build_bug_body(record, desc)
+    return build_change_body(record, desc)
+
+
+def build_change_body(record: Record, desc: Description) -> str:
     """Compose the issue body from the proposal and tasks.md.
 
     Order matters. The description leads, because a body opening with a link
@@ -342,13 +554,13 @@ def build_issue_body(change: Change, desc: Description) -> str:
     prose: they are what you click after deciding you care. Nothing here is
     folded behind <details>; a summary nobody expands is the state this
     change exists to fix."""
-    rel = change.path.relative_to(REPO_ROOT).as_posix()
+    rel = _where(record.path)
     lines = [
         "<!-- Generated by scripts/sync-project-board.py. Edits here are overwritten. -->",
         "",
         desc.lead,
         "",
-        f"**Status:** {change.status} · **Tasks:** {change.progress}",
+        f"**Status:** {record.status} · **Tasks:** {record.progress}",
         "",
         "**What changes**",
         "",
@@ -358,14 +570,14 @@ def build_issue_body(change: Change, desc: Description) -> str:
         lines += ["", "**Out of scope**", "", *desc.out_of_scope]
 
     lines += ["", f"- [proposal]({rel}/proposal.md)"]
-    if (change.path / "design.md").is_file():
+    if (record.path / "design.md").is_file():
         lines.append(f"- [design]({rel}/design.md)")
-    specs = sorted((change.path / "specs").rglob("spec.md")) if (change.path / "specs").is_dir() else []
+    specs = sorted((record.path / "specs").rglob("spec.md")) if (record.path / "specs").is_dir() else []
     for spec in specs:
-        lines.append(f"- [spec: {spec.parent.name}]({spec.relative_to(REPO_ROOT).as_posix()})")
+        lines.append(f"- [spec: {spec.parent.name}]({_where(spec)})")
     lines.append("")
 
-    tasks = change.path / "tasks.md"
+    tasks = record.path / "tasks.md"
     if tasks.is_file():
         # Verbatim: OpenSpec already writes GitHub checkbox markdown, so the
         # native task list and its progress bar need no transformation.
@@ -374,6 +586,45 @@ def build_issue_body(change: Change, desc: Description) -> str:
         lines.append(tasks.read_text(encoding="utf-8").rstrip())
     else:
         lines.append("_No tasks file._")
+
+    return "\n".join(lines) + "\n"
+
+
+def build_bug_body(record: Record, report: BugReport) -> str:
+    """Compose the issue body from the report.
+
+    Same shape as a change's: the description leads, status stays high, links
+    sit below the prose, nothing is folded. What differs is that causation and
+    repair are published together on one line directly under the status, and
+    that the reproduction is carried in full rather than summarised — a report
+    somebody has to open the repository to act on is a report that gets
+    argued with instead of run."""
+    rel = _where(record.path)
+    lines = [
+        "<!-- Generated by scripts/sync-project-board.py. Edits here are overwritten. -->",
+        "",
+        report.broken,
+        "",
+        f"**Status:** {record.status} · **Tasks:** {record.progress}",
+        "",
+        f"**Caused by:** {report.caused_by} · **Fixed by:** {report.fixed_by}",
+        "",
+        "**Reproduction**",
+        "",
+        *report.reproduction,
+    ]
+    if report.impact:
+        lines += ["", "**Impact**", "", *report.impact]
+    lines += ["", "**Root cause**", "", *report.root_cause]
+    lines += ["", "**Does this need a change?**", "", *report.needs_change]
+    lines += ["", f"- [report]({rel}/report.md)", ""]
+
+    if report.fix_tasks:
+        # Verbatim, for the same reason a change's tasks.md is: the checkbox
+        # markdown is already what GitHub's task-list progress bar reads.
+        lines += ["---", "", *report.fix_tasks]
+    else:
+        lines.append("_No fix tasks — see the linked change, if any._")
 
     return "\n".join(lines) + "\n"
 
@@ -410,20 +661,31 @@ def project_items() -> dict[str, str]:
     return items
 
 
-def ensure_labels(changes: list[Change]) -> None:
+def ensure_labels(records: list[Record]) -> None:
     """Create any label the sync is about to use. --force makes this
-    idempotent: it updates an existing label rather than failing."""
+    idempotent: it updates an existing label rather than failing.
+
+    Every colour lookup here is a dict subscript on a closed set, so an
+    unrecognised layer or kind raises rather than reaching GitHub. That is the
+    point: this function creates whatever it is handed, so a typo that got
+    past preflight would otherwise become a real label nobody else shares."""
     wanted: dict[str, tuple[str, str]] = {}
-    for change in changes:
-        for label in change.labels:
+    for record in records:
+        for label in record.labels:
             if label.startswith(CAPABILITY_LABEL_PREFIX):
                 cap = label[len(CAPABILITY_LABEL_PREFIX):]
                 wanted[label] = (CAPABILITY_LABEL_COLOR,
-                                 f"Changes affecting the {cap} capability")
-            else:
+                                 f"Records affecting the {cap} capability")
+            elif label.startswith(LAYER_LABEL_PREFIX):
                 layer = label[len(LAYER_LABEL_PREFIX):]
                 wanted[label] = (LAYER_LABEL_COLORS[layer],
-                                 f"Changes whose work lives in the {layer} layer")
+                                 f"Records whose work lives in the {layer} layer")
+            else:
+                kind = label[len(KIND_LABEL_PREFIX):]
+                wanted[label] = (KIND_LABEL_COLORS[kind],
+                                 "Defects in behaviour that already exists"
+                                 if kind == BUG else
+                                 "Work the project has committed to")
     existing = {l["name"] for l in json.loads(
         gh("label", "list", "--repo", REPO, "--limit", "100", "--json", "name") or "[]")}
     for name, (color, desc) in sorted(wanted.items()):
@@ -434,26 +696,29 @@ def ensure_labels(changes: list[Change]) -> None:
 
 
 def sync(dry_run: bool) -> int:
-    changes = discover_changes()
-    if not changes:
-        print("No changes found under openspec/changes/.")
+    records = discover_records()
+    if not records:
+        print("No records found under openspec/changes/ or openspec/bugs/.")
         return 1
 
-    print(f"Found {len(changes)} change(s)\n")
+    print(f"Found {len(records)} record(s)\n")
 
-    # Preflight. Every proposal is read before anything is written, so a
-    # proposal that cannot supply a description stops the whole run rather
-    # than leaving one card stale beside four current ones — the exact
-    # condition a derived board exists to make impossible. Every failure is
-    # reported, not just the first, so one pass names all the work.
-    descriptions: dict[str, Description] = {}
+    # Preflight. Every document is read before anything is written, so one
+    # that cannot supply a description stops the whole run rather than leaving
+    # one card stale beside four current ones — the exact condition a derived
+    # board exists to make impossible. Every failure is reported, not just the
+    # first, so one pass names all the work.
+    #
+    # Keyed by issue title, not by name: a bug and a change may share a name,
+    # and the titles are what distinguish them.
+    descriptions: dict[str, Description | BugReport] = {}
     failures: list[str] = []
-    for change in changes:
+    for record in records:
         try:
-            descriptions[change.name] = extract_description(change)
-        except ProposalError as exc:
+            descriptions[record.issue_title] = extract_description(record)
+        except DocumentError as exc:
             failures.append(str(exc))
-        failures.extend(check_layer(change))
+        failures.extend(check_declarations(record))
     if failures:
         sys.stdout.flush()  # keep the report above the errors, not after them
         for failure in failures:
@@ -463,35 +728,35 @@ def sync(dry_run: bool) -> int:
         return 1
 
     if not dry_run:
-        ensure_labels(changes)
+        ensure_labels(records)
     on_board = {} if dry_run else project_items()
     actions = 0
 
-    for change in changes:
-        body = build_issue_body(change, descriptions[change.name])
-        issue = find_issue(change.issue_title)
-        want_state = "CLOSED" if change.archived else "OPEN"
+    for record in records:
+        body = build_issue_body(record, descriptions[record.issue_title])
+        issue = find_issue(record.issue_title)
+        want_state = "CLOSED" if record.archived else "OPEN"
 
-        print(f"  {change.name}")
-        print(f"    status   {change.status}  ({change.progress})")
-        if change.labels:
-            print(f"    labels   {', '.join(change.labels)}")
+        print(f"  {record.issue_title}")
+        print(f"    status   {record.status}  ({record.progress})")
+        if record.labels:
+            print(f"    labels   {', '.join(record.labels)}")
 
         if dry_run:
             print(f"    issue    {'update' if issue else 'create'} (dry run)")
-            print(f"    board    set {STATUS_FIELD} = {change.status} (dry run)\n")
+            print(f"    board    set {STATUS_FIELD} = {record.status} (dry run)\n")
             continue
 
         if issue is None:
             url = gh(
                 "issue", "create", "--repo", REPO,
-                "--title", change.issue_title, "--body", body,
+                "--title", record.issue_title, "--body", body,
                 "--assignee", ISSUE_ASSIGNEE,
-                *sum((["--label", l] for l in change.labels), []),
+                *sum((["--label", l] for l in record.labels), []),
             ).splitlines()[-1]
             issue = {"url": url, "number": url.rsplit("/", 1)[-1], "state": "OPEN",
                      "body": body, "assignees": [{"login": ISSUE_ASSIGNEE}],
-                     "labels": [{"name": l} for l in change.labels]}
+                     "labels": [{"name": l} for l in record.labels]}
             print(f"    issue    created {url}")
             actions += 1
         else:
@@ -503,12 +768,12 @@ def sync(dry_run: bool) -> int:
             else:
                 print(f"    issue    up to date")
 
-        # Labels are reconciled, not merely added. The sync owns exactly two
-        # prefixes; a stale one inside them is removed, and every other label
-        # — `bug`, anything applied by hand — is left alone, because a board
+        # Labels are reconciled, not merely added. The sync owns exactly
+        # three prefixes; a stale one inside them is removed, and every other
+        # label — anything applied by hand — is left alone, because a board
         # that deletes someone's label teaches people not to use labels.
         have = {l["name"] for l in issue.get("labels", [])}
-        want = set(change.labels)
+        want = set(record.labels)
         missing = sorted(want - have)
         stale = sorted(l for l in have - want
                        if l.startswith(MANAGED_LABEL_PREFIXES) or l == "tooling")
@@ -529,7 +794,7 @@ def sync(dry_run: bool) -> int:
             print(f"    issue    assigned to {ISSUE_ASSIGNEE}")
             actions += 1
 
-        # An archived change closes its issue, so the repo's open issues mean
+        # An archived record closes its issue, so the repo's open issues mean
         # "work in flight" without needing the board next to them.
         if issue.get("state", "OPEN").upper() != want_state:
             verb = "close" if want_state == "CLOSED" else "reopen"
@@ -551,11 +816,11 @@ def sync(dry_run: bool) -> int:
             "--project-id", project_id(),
             "--id", on_board[url],
             "--field-id", status_field_id(),
-            "--single-select-option-id", status_option_id(change.status),
+            "--single-select-option-id", status_option_id(record.status),
         )
-        print(f"    board    {STATUS_FIELD} = {change.status}\n")
+        print(f"    board    {STATUS_FIELD} = {record.status}\n")
 
-    print(f"{'Dry run — nothing changed.' if dry_run else f'{actions} change(s) applied.'}")
+    print(f"{'Dry run — nothing changed.' if dry_run else f'{actions} update(s) applied.'}")
     return 0
 
 

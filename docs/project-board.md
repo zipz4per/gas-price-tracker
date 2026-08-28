@@ -14,6 +14,12 @@ move any work — and the next sync overwrites it.
 To change what the board shows, change the repository: tick a task in a
 change's `tasks.md`, or archive the change. Then run the sync.
 
+The board carries **two kinds of record**. A change is a commitment, described
+by a proposal and tracked by `tasks.md`. A bug is an observation, described by
+a report under `openspec/bugs/` and tracked by whatever fix tasks that report
+carries. They share the columns because their lifecycles are parallel; the
+`kind:` label tells them apart.
+
 That constraint is the point. A board maintained by hand drifts the moment
 someone forgets to update it, and a drifted board is worse than none because
 people believe it. Deriving everything means the only way the board can be
@@ -28,11 +34,11 @@ python3 scripts/sync-project-board.py --dry-run  # show what would change
 ```
 
 Start with `--dry-run`. It touches nothing on GitHub and prints the status and
-progress it derived for every change, which is the fastest way to see whether
+progress it derived for every record, which is the fastest way to see whether
 the board will land where you expect.
 
 The sync is **idempotent** — running it twice in a row reports
-`0 change(s) applied` the second time. Run it as often as you like.
+`0 update(s) applied` the second time. Run it as often as you like.
 
 ### Prerequisites
 
@@ -48,14 +54,24 @@ before writing anything.
 
 ## The columns
 
-Status is derived from where a change lives and how many of its tasks are done:
+Status is derived from where a record lives and how many of its tasks are done:
 
-| Column | Means | Derived from |
-|---|---|---|
-| **Proposed** | Planned, not started | In `openspec/changes/`, 0 tasks done |
-| **In Progress** | Being implemented | In `openspec/changes/`, some tasks done |
-| **Ready to archive** | Implementation finished, not yet archived | In `openspec/changes/`, all tasks done |
-| **Done** | Archived | In `openspec/changes/archive/` |
+| Column | A change means | A bug means | Derived from |
+|---|---|---|---|
+| **Proposed** | Planned, not started | Reported or confirmed | 0 tasks done |
+| **In Progress** | Being implemented | Being fixed | Some tasks done |
+| **Ready to archive** | Implementation finished, not yet archived | Fixed, record not yet closed | All tasks done |
+| **Done** | Archived | Archived | In the tree's `archive/` |
+
+**Won't fix** and **not a bug** have no column, because they are not stages —
+they are closures. Close the issue as *not planned* and record the reason in
+the report's `Fixed by`. A bug nobody intends to repair is worse as decoration
+on a board of live work than it is closed honestly.
+
+A bug also stays open until its change archives, rather than closing the moment
+a change is filed to fix it. Six months on, the search is for the symptom, not
+for the change that fixed it — a closed bug pointing at a change is a redirect,
+an open one is the answer.
 
 `Ready to archive` is the one worth having. It catches a change whose work is
 complete but which hasn't been archived and whose specs haven't been synced —
@@ -73,8 +89,11 @@ If the board opens grouped by the wrong field, change the view's grouping to
 
 ## The cards
 
-One issue per change, titled `[change] <name>`. Every part of the body is read
-out of the change itself:
+One issue per record. A change is titled `[change] <name>` and a bug
+`[bug] <name>`, so the two can share a name without colliding. Every part of a
+body is read out of the record itself.
+
+**A change**, from `openspec/changes/<name>/`:
 
 | Part of the body | Comes from |
 |---|---|
@@ -84,6 +103,26 @@ out of the change itself:
 | Status and progress | the change's directory and its task checkboxes |
 | Links | the artifacts present in the change directory |
 | The checklist | `tasks.md` verbatim, so GitHub renders a native task list with a progress bar |
+
+**A bug**, from `openspec/bugs/<name>/`:
+
+| Part of the body | Comes from |
+|---|---|
+| Description | the first paragraph under `## What's broken` in `report.md` |
+| **Caused by** / **Fixed by** | those two sections, published together on one line |
+| **Reproduction** | that section verbatim, in full |
+| **Impact**, **Root cause**, **Does this need a change?** | those sections verbatim |
+| Status and progress | the bug's directory and any checkboxes under `## Fix tasks` |
+| The checklist | `## Fix tasks` verbatim, when the fix is tracked in the report rather than in a change |
+
+Causation and repair are published together because a defect that shipped
+broken and one that was working until a known commit are different findings,
+and seeing only one of them invites the wrong conclusion. `never worked` is a
+first-class answer, not an empty field.
+
+The reproduction is carried in full rather than summarised. A report somebody
+has to open the repository to act on is a report that gets argued with instead
+of run.
 
 Nothing in an issue is written by hand, so nothing in an issue can disagree
 with the repository. Changing what an issue says means editing the proposal.
@@ -95,7 +134,7 @@ portfolio, so the reader worth optimising for is one assessing the project
 rather than one tracking a burndown, and a summary nobody expands is the same
 as no summary.
 
-### What this asks of a proposal
+### What this asks of a proposal or a report
 
 Because the opening paragraph of `## Why` is published, it has to stand on its
 own — a reader sees it with no surrounding document. A proposal that opens with
@@ -110,43 +149,90 @@ refuse than publish a plausible wrong answer.
 `### Explicitly out of scope` is the one optional part — a change that has no
 out-of-scope section simply omits it.
 
+A report is held to the same standard, section by section. It must carry
+`## What's broken`, `## Impact`, `## Reproduction`, `## Root cause`,
+`## Caused by`, `## Fixed by`, and `## Does this need a change?`, and each must
+have content — a section whose answer is not yet known keeps a pending marker
+like `_Not yet investigated._` rather than being left blank or dropped. An
+absent section reads as an oversight; a pending one reads as a stage not yet
+reached. An empty `## Reproduction` stops the sync outright: a report nobody
+else can reproduce is a claim, not a finding.
+
+Start from `openspec/bugs/report-template.md`, which carries every section and
+its pending form.
+
 The same check rejects a proposal whose published text contains a `- [ ]` or
 `- [x]` line. GitHub counts a checkbox anywhere in an issue body toward that
 issue's task-list progress, so one in quoted prose would inflate the count on
 GitHub while the board's own count, read from `tasks.md`, stayed correct.
 
-Tasks are **not** separate cards. The six changes hold over a hundred tasks
-between them; that many cards is not a board anyone reads, and a change is the
-unit that actually moves between columns.
+Tasks are **not** separate cards. Nine changes hold 188 tasks between them;
+that many cards is not a board anyone reads, and a record is the unit that
+actually moves between columns.
 
-An archived change has its issue **closed**, so the repository's issue list is
+An archived record has its issue **closed**, so the repository's issue list is
 meaningful on its own — open issues are work in flight, closed ones shipped.
 
 ## The labels
 
-Two axes, filtered independently:
+Three axes, filtered independently:
 
-| Label | Answers | Comes from |
-|---|---|---|
-| `capability: <name>` | what the change is about | the capability directories under the change's `specs/` |
-| `layer: <backend\|frontend\|tooling>` | where the work lives | `layer:` in the change's `.openspec.yaml` |
+| Label | Answers | Comes from | Derived or declared |
+|---|---|---|---|
+| `capability: <name>` | what the record is about | a change's `specs/` directories; a bug's `capability:` | derived for a change, **declared** for a bug |
+| `layer: <backend\|frontend\|tooling>` | where the work lives | `layer:` in `.openspec.yaml` | **declared** |
+| `kind: <feature\|bug>` | work, or a defect | which tree the record sits in | derived |
 
-A change carries one label from each axis, except a tooling change, which
-touches no capability and carries only its layer.
+A record carries one label from each axis, except a tooling one, which touches
+no capability and carries only its layer and kind.
 
-They are separate axes because a capability spans layers. `price-reports` will
+`capability:` and `layer:` are separate axes because a capability spans layers. `price-reports` will
 eventually hold both the server-side rate limiting PRD FR-12 requires — the
 client can be bypassed, so the check cannot live there — and the submission
 flow FR-5 describes. A layer attached to that capability would be wrong
 whichever value it took. A change, by contrast, sits on one side; the rare one
 that genuinely spans both says so with two labels.
 
+### Why `kind:` is derived and the others are not
+
+`kind:` is the only label here that nothing declares. A record under
+`openspec/bugs/` is `kind: bug` and one under `openspec/changes/` is
+`kind: feature`, and the directory answers the question completely — there is
+no case where the path is right and the label should differ.
+
+Deriving beats declaring whenever deriving cannot be wrong. `layer:` has to be
+declared because nothing in the tree implies it: the sync reads the planning
+directory, never a diff, so it cannot tell client work from server work by
+looking. `kind:` has no such gap, so declaring it would only add a field that
+can be mistyped in contradiction of a path that is already correct.
+
+A `kind:` key in an `.openspec.yaml` is therefore **rejected**, not ignored. An
+ignored declaration is worse than a rejected one, because it reads as though it
+took effect.
+
+### The one label on a bug that can be wrong
+
+A change's capabilities are derived from the `specs/` directories it writes
+deltas for, so they cannot disagree with the change. A bug has no `specs/`
+directory — it is a record about behaviour that already exists, not a proposal
+to change it — so it declares its capability instead:
+
+```yaml
+capability: doe-reference-prices
+layer: backend
+```
+
+The declared value must name a directory under `openspec/specs/`. One that does
+not **stops the sync**, for the same reason a bad layer does: a typo would
+otherwise create a plausible new label that filters into nothing. A bug whose
+layer is `tooling` may omit the capability, matching how a tooling change
+carries none.
+
 ### Declaring a layer
 
-The layer is the one thing here that is declared rather than derived. Nothing
-in `openspec/` reveals whether a change is client or server work — the sync
-reads the planning directory, never a diff — so each change states it, beside
-the `skip_specs` marker the board already trusts:
+Nothing in `openspec/` reveals whether a change is client or server work — the
+sync reads the planning directory, never a diff — so each record states it,
+beside the `skip_specs` marker the board already trusts:
 
 ```yaml
 schema: spec-driven
@@ -164,14 +250,14 @@ filters into nothing.
 
 The sync reconciles labels rather than only adding them: each run computes what
 an issue should carry, adds what is missing, and removes anything stale. That
-removal is scoped to the two prefixes above.
+removal is scoped to the three prefixes above.
 
 ```
   capability: …  ─┐
-                  ├─ managed: added and removed every run
-  layer: …       ─┘
+  layer: …        ├─ managed: added and removed every run
+  kind: …        ─┘
 
-  bug, enhancement, anything applied by hand  ─  never touched
+  enhancement, good first issue, anything applied by hand  ─  never touched
 ```
 
 An unmanaged label is left alone permanently. A board that deletes a label
@@ -189,7 +275,7 @@ which is destructive enough to be a person's decision rather than a sync's.
 | A card didn't move | The sync hasn't run since the change did | Run the sync |
 | Duplicate cards for one change | The change was renamed; issues match by title | Close the orphaned issue and delete its card |
 | `gh project list` scope error | Token lost `project` scope | `gh auth refresh -s project` |
-| `N problem(s) in openspec/` | A change has no valid `layer:`, or a proposal can't supply a description | Fix what the error names; the sync wrote nothing |
+| `N problem(s) in openspec/` | A record has no valid `layer:`, a bug's `capability:` names no spec directory, a `kind:` is declared, or a proposal or report can't supply a description | Fix what the error names; the sync wrote nothing |
 | A card is missing entirely | Its issue was deleted | Just run the sync; it recreates from scratch |
 
 Nothing here needs repair by hand beyond deleting orphans — the sync stores no
