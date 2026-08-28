@@ -122,6 +122,66 @@ unit that actually moves between columns.
 An archived change has its issue **closed**, so the repository's issue list is
 meaningful on its own — open issues are work in flight, closed ones shipped.
 
+## The labels
+
+Two axes, filtered independently:
+
+| Label | Answers | Comes from |
+|---|---|---|
+| `capability: <name>` | what the change is about | the capability directories under the change's `specs/` |
+| `layer: <backend\|frontend\|tooling>` | where the work lives | `layer:` in the change's `.openspec.yaml` |
+
+A change carries one label from each axis, except a tooling change, which
+touches no capability and carries only its layer.
+
+They are separate axes because a capability spans layers. `price-reports` will
+eventually hold both the server-side rate limiting PRD FR-12 requires — the
+client can be bypassed, so the check cannot live there — and the submission
+flow FR-5 describes. A layer attached to that capability would be wrong
+whichever value it took. A change, by contrast, sits on one side; the rare one
+that genuinely spans both says so with two labels.
+
+### Declaring a layer
+
+The layer is the one thing here that is declared rather than derived. Nothing
+in `openspec/` reveals whether a change is client or server work — the sync
+reads the planning directory, never a diff — so each change states it, beside
+the `skip_specs` marker the board already trusts:
+
+```yaml
+schema: spec-driven
+created: 2026-08-28
+skip_specs: true
+layer: tooling
+```
+
+A change with no `layer:`, or with a value outside `backend`, `frontend`, and
+`tooling`, **stops the sync** and is named in the error. A typo would otherwise
+create a plausible new label — `layer: backedn` looks right on a card and
+filters into nothing.
+
+### What the sync will and will not touch
+
+The sync reconciles labels rather than only adding them: each run computes what
+an issue should carry, adds what is missing, and removes anything stale. That
+removal is scoped to the two prefixes above.
+
+```
+  capability: …  ─┐
+                  ├─ managed: added and removed every run
+  layer: …       ─┘
+
+  bug, enhancement, anything applied by hand  ─  never touched
+```
+
+An unmanaged label is left alone permanently. A board that deletes a label
+someone applied by hand teaches people not to use labels.
+
+One consequence worth knowing: the retired bare `tooling` label is removed from
+the issues that carried it, but the label itself is left in the repository,
+unused. Deleting a label removes it from every issue that ever carried it,
+which is destructive enough to be a person's decision rather than a sync's.
+
 ## When something looks wrong
 
 | Symptom | Cause | Fix |
@@ -129,8 +189,8 @@ meaningful on its own — open issues are work in flight, closed ones shipped.
 | A card didn't move | The sync hasn't run since the change did | Run the sync |
 | Duplicate cards for one change | The change was renamed; issues match by title | Close the orphaned issue and delete its card |
 | `gh project list` scope error | Token lost `project` scope | `gh auth refresh -s project` |
+| `N problem(s) in openspec/` | A change has no valid `layer:`, or a proposal can't supply a description | Fix what the error names; the sync wrote nothing |
 | A card is missing entirely | Its issue was deleted | Just run the sync; it recreates from scratch |
-| `N proposal(s) could not be read` | A proposal can't supply a description | Fix the section the error names; the sync wrote nothing |
 
 Nothing here needs repair by hand beyond deleting orphans — the sync stores no
 state, so there is no bookkeeping to get out of step.

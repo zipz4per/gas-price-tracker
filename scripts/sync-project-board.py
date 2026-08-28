@@ -56,10 +56,25 @@ ISSUE_TITLE_PREFIX = "[change] "
 
 # Labels are derived like everything else: a change's specs/ directory names
 # the capabilities it touches, and a change declaring skip_specs is tooling.
+# Two axes, filtered independently: `capability:` says what a change is about,
+# `layer:` says where the work lives. They are not alternatives — a change has
+# both, except a tooling change, which touches no capability. Collapsing them
+# into one field is what made `tooling` look like a capability.
 CAPABILITY_LABEL_PREFIX = "capability: "
-TOOLING_LABEL = "tooling"
+LAYER_LABEL_PREFIX = "layer: "
+MANAGED_LABEL_PREFIXES = (CAPABILITY_LABEL_PREFIX, LAYER_LABEL_PREFIX)
+
+# A closed set. An unrecognised value would otherwise flow into ensure_labels(),
+# which creates whatever it is handed, and the change would look correctly
+# labelled while carrying a label nobody else shares.
+LAYERS = ("backend", "frontend", "tooling")
+
 CAPABILITY_LABEL_COLOR = "0e8a16"
-TOOLING_LABEL_COLOR = "5319e7"
+LAYER_LABEL_COLORS = {
+    "backend": "1d76db",
+    "frontend": "d93f0b",
+    "tooling": "5319e7",  # the colour the retired bare `tooling` label used
+}
 ARCHIVE_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
 
 # A checkbox anywhere in an issue body is counted by GitHub's task-list
@@ -95,6 +110,7 @@ class Change:
     total: int
     capabilities: tuple[str, ...] = ()
     skip_specs: bool = False
+    layer: str = ""
 
     @property
     def status(self) -> str:
@@ -116,14 +132,13 @@ class Change:
 
     @property
     def labels(self) -> list[str]:
-        """A change touching specs is labelled by capability; one declaring
-        skip_specs is tooling. Both are read from the change itself, so the
-        labels cannot fall out of step with what the change actually does."""
-        if self.capabilities:
-            return [f"{CAPABILITY_LABEL_PREFIX}{c}" for c in self.capabilities]
-        if self.skip_specs:
-            return [TOOLING_LABEL]
-        return []
+        """Both axes together. Capabilities come from the change's specs/
+        directory and the layer from its .openspec.yaml, so neither can fall
+        out of step with what the change actually is."""
+        labels = [f"{CAPABILITY_LABEL_PREFIX}{c}" for c in self.capabilities]
+        if self.layer:
+            labels.append(f"{LAYER_LABEL_PREFIX}{self.layer}")
+        return labels
 
 
 def count_tasks(change_dir: Path) -> tuple[int, int]:
@@ -152,6 +167,23 @@ def reads_skip_specs(change_dir: Path) -> bool:
     return "skip_specs: true" in cfg.read_text(encoding="utf-8")
 
 
+LAYER_RE = re.compile(r"(?m)^layer:\s*(\S+)\s*$")
+
+
+def read_layer(change_dir: Path) -> str:
+    """The layer a change declares, or "" when it declares none.
+
+    Declared rather than derived: the sync reads only the planning directory,
+    never a diff, so nothing here can tell client work from server work by
+    looking. Validation happens in preflight, where a bad value can stop the
+    run before it reaches ensure_labels()."""
+    cfg = change_dir / ".openspec.yaml"
+    if not cfg.is_file():
+        return ""
+    found = LAYER_RE.search(cfg.read_text(encoding="utf-8"))
+    return found.group(1) if found else ""
+
+
 def discover_changes() -> list[Change]:
     changes: list[Change] = []
 
@@ -160,7 +192,8 @@ def discover_changes() -> list[Change]:
             continue
         done, total = count_tasks(d)
         changes.append(Change(d.name, d, False, done, total,
-                              read_capabilities(d), reads_skip_specs(d)))
+                              read_capabilities(d), reads_skip_specs(d),
+                              read_layer(d)))
 
     for d in sorted(ARCHIVE_DIR.iterdir()) if ARCHIVE_DIR.is_dir() else []:
         if not d.is_dir():
@@ -170,7 +203,8 @@ def discover_changes() -> list[Change]:
         name = ARCHIVE_DATE_RE.sub("", d.name)
         done, total = count_tasks(d)
         changes.append(Change(name, d, True, done, total,
-                              read_capabilities(d), reads_skip_specs(d)))
+                              read_capabilities(d), reads_skip_specs(d),
+                              read_layer(d)))
 
     return changes
 
@@ -277,6 +311,28 @@ def extract_description(change: Change) -> Description:
     return Description(" ".join(lead), changes, out_of_scope)
 
 
+def check_layer(change: Change) -> list[str]:
+    """Validate a change's declared layer, returning problems rather than
+    raising, so one pass can report every change that needs attention.
+
+    An undeclared layer is an omission and an unrecognised one is a typo, and
+    both produce the same silent outcome if allowed through: a card that looks
+    labelled and filters into nothing."""
+    cfg = (change.path / ".openspec.yaml")
+    try:
+        where = cfg.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        where = str(cfg)
+    allowed = ", ".join(LAYERS)
+    if not change.layer:
+        return [f"{change.name}: no 'layer:' declared; expected one of "
+                f"{allowed} ({where})"]
+    if change.layer not in LAYERS:
+        return [f"{change.name}: unrecognised layer {change.layer!r}; expected "
+                f"one of {allowed} ({where})"]
+    return []
+
+
 def build_issue_body(change: Change, desc: Description) -> str:
     """Compose the issue body from the proposal and tasks.md.
 
@@ -365,8 +421,9 @@ def ensure_labels(changes: list[Change]) -> None:
                 wanted[label] = (CAPABILITY_LABEL_COLOR,
                                  f"Changes affecting the {cap} capability")
             else:
-                wanted[label] = (TOOLING_LABEL_COLOR,
-                                 "Tooling or scaffolding; no product behaviour change")
+                layer = label[len(LAYER_LABEL_PREFIX):]
+                wanted[label] = (LAYER_LABEL_COLORS[layer],
+                                 f"Changes whose work lives in the {layer} layer")
     existing = {l["name"] for l in json.loads(
         gh("label", "list", "--repo", REPO, "--limit", "100", "--json", "name") or "[]")}
     for name, (color, desc) in sorted(wanted.items()):
@@ -396,11 +453,12 @@ def sync(dry_run: bool) -> int:
             descriptions[change.name] = extract_description(change)
         except ProposalError as exc:
             failures.append(str(exc))
+        failures.extend(check_layer(change))
     if failures:
         sys.stdout.flush()  # keep the report above the errors, not after them
         for failure in failures:
             print(f"error: {failure}", file=sys.stderr)
-        print(f"\n{len(failures)} proposal(s) could not be read. Nothing was written.",
+        print(f"\n{len(failures)} problem(s) in openspec/. Nothing was written.",
               file=sys.stderr)
         return 1
 
@@ -445,12 +503,23 @@ def sync(dry_run: bool) -> int:
             else:
                 print(f"    issue    up to date")
 
+        # Labels are reconciled, not merely added. The sync owns exactly two
+        # prefixes; a stale one inside them is removed, and every other label
+        # — `bug`, anything applied by hand — is left alone, because a board
+        # that deletes someone's label teaches people not to use labels.
         have = {l["name"] for l in issue.get("labels", [])}
-        missing = [l for l in change.labels if l not in have]
-        if missing:
+        want = set(change.labels)
+        missing = sorted(want - have)
+        stale = sorted(l for l in have - want
+                       if l.startswith(MANAGED_LABEL_PREFIXES) or l == "tooling")
+        if missing or stale:
             gh("issue", "edit", str(issue["number"]), "--repo", REPO,
-               *sum((["--add-label", l] for l in missing), []))
-            print(f"    issue    labelled {', '.join(missing)}")
+               *sum((["--add-label", l] for l in missing), []),
+               *sum((["--remove-label", l] for l in stale), []))
+            if missing:
+                print(f"    issue    labelled {', '.join(missing)}")
+            if stale:
+                print(f"    issue    unlabelled {', '.join(stale)}")
             actions += 1
 
         assignees = {a["login"] for a in issue.get("assignees", [])}
