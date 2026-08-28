@@ -1,0 +1,8 @@
+schema: spec-driven
+created: 2026-08-29
+layer: tooling
+
+# A bug report is a record, not a behaviour the project promises. This change
+# adds a place to keep those records and a path from there to the board; it
+# changes no capability.
+skip_specs: true
