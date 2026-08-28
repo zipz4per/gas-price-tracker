@@ -73,11 +73,49 @@ If the board opens grouped by the wrong field, change the view's grouping to
 
 ## The cards
 
-One issue per change, titled `[change] <name>`. The body is that change's
-`tasks.md` verbatim, so GitHub renders a native task list with a progress bar,
-plus links to the change's proposal, design, and specs.
+One issue per change, titled `[change] <name>`. Every part of the body is read
+out of the change itself:
 
-Tasks are **not** separate cards. The four changes hold over eighty tasks
+| Part of the body | Comes from |
+|---|---|
+| Description | the first paragraph under `## Why` in `proposal.md` |
+| **What changes** | the bullets under `## What Changes` |
+| **Out of scope** | the bullets under `### Explicitly out of scope`, when there are any |
+| Status and progress | the change's directory and its task checkboxes |
+| Links | the artifacts present in the change directory |
+| The checklist | `tasks.md` verbatim, so GitHub renders a native task list with a progress bar |
+
+Nothing in an issue is written by hand, so nothing in an issue can disagree
+with the repository. Changing what an issue says means editing the proposal.
+
+The description sits **above** the checklist and is never folded behind a
+`<details>` block. That costs roughly 200–280 words before the progress bar,
+which is a deliberate trade: this repository is public and serves as a
+portfolio, so the reader worth optimising for is one assessing the project
+rather than one tracking a burndown, and a summary nobody expands is the same
+as no summary.
+
+### What this asks of a proposal
+
+Because the opening paragraph of `## Why` is published, it has to stand on its
+own — a reader sees it with no surrounding document. A proposal that opens with
+a bullet, a sub-heading, a blockquote, or a table row **stops the sync** rather
+than being trimmed into something that merely looks like a description, and so
+does a proposal with no `## What Changes` bullets.
+
+That is deliberate. Every one of these failures is silent if you let it pass:
+a truncated summary reads exactly like a correct one. The sync would rather
+refuse than publish a plausible wrong answer.
+
+`### Explicitly out of scope` is the one optional part — a change that has no
+out-of-scope section simply omits it.
+
+The same check rejects a proposal whose published text contains a `- [ ]` or
+`- [x]` line. GitHub counts a checkbox anywhere in an issue body toward that
+issue's task-list progress, so one in quoted prose would inflate the count on
+GitHub while the board's own count, read from `tasks.md`, stayed correct.
+
+Tasks are **not** separate cards. The six changes hold over a hundred tasks
 between them; that many cards is not a board anyone reads, and a change is the
 unit that actually moves between columns.
 
@@ -92,6 +130,7 @@ meaningful on its own — open issues are work in flight, closed ones shipped.
 | Duplicate cards for one change | The change was renamed; issues match by title | Close the orphaned issue and delete its card |
 | `gh project list` scope error | Token lost `project` scope | `gh auth refresh -s project` |
 | A card is missing entirely | Its issue was deleted | Just run the sync; it recreates from scratch |
+| `N proposal(s) could not be read` | A proposal can't supply a description | Fix the section the error names; the sync wrote nothing |
 
 Nothing here needs repair by hand beyond deleting orphans — the sync stores no
 state, so there is no bookkeeping to get out of step.

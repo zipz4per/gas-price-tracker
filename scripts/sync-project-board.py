@@ -62,6 +62,15 @@ CAPABILITY_LABEL_COLOR = "0e8a16"
 TOOLING_LABEL_COLOR = "5319e7"
 ARCHIVE_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
 
+# A checkbox anywhere in an issue body is counted by GitHub's task-list
+# progress bar, so one in quoted prose would inflate an issue's task count
+# while the board's own count — read from tasks.md — stayed right.
+CHECKBOX_RE = re.compile(r"^- \[[ xX]\] ")
+
+# A lead paragraph must be prose. These prefixes mark a bullet, heading,
+# blockquote, or table row, none of which reads as a description.
+NON_PROSE_PREFIXES = ("-", "*", "+", "#", ">", "|")
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CHANGES_DIR = REPO_ROOT / "openspec" / "changes"
 ARCHIVE_DIR = CHANGES_DIR / "archive"
@@ -166,18 +175,133 @@ def discover_changes() -> list[Change]:
     return changes
 
 
-def build_issue_body(change: Change) -> str:
-    """Body is the change's tasks.md verbatim — OpenSpec already writes GitHub
-    checkbox markdown, so GitHub renders a native task list with a progress bar
-    without any transformation."""
+class ProposalError(RuntimeError):
+    """A proposal that cannot supply a description.
+
+    Raised during preflight, before anything is written, because the
+    alternative — publishing whatever the parse happened to return — produces
+    an issue that looks fine and describes the wrong thing."""
+
+
+@dataclass(frozen=True)
+class Description:
+    """The parts of a proposal that get published on its issue."""
+    lead: str
+    changes: tuple[str, ...]
+    out_of_scope: tuple[str, ...]
+
+
+def _section(lines: list[str], heading: str) -> list[str] | None:
+    """Lines under `heading`, stopping at the next heading of ANY level.
+
+    Stopping at any heading is what keeps `### Explicitly out of scope` out of
+    the `## What Changes` bullets — it is nested under that section, so a
+    scanner that only stopped at `##` would quote every out-of-scope bullet
+    twice. Returns None when the heading is absent, which is different from a
+    heading that is present and empty."""
+    out: list[str] | None = None
+    for line in lines:
+        if line.strip() == heading:
+            out = []
+            continue
+        if out is not None:
+            if line.startswith("#"):
+                break
+            out.append(line)
+    return out
+
+
+def _lead_paragraph(lines: list[str]) -> list[str]:
+    """The first block of non-blank lines."""
+    para: list[str] = []
+    for line in lines:
+        if not line.strip():
+            if para:
+                break
+            continue
+        para.append(line.rstrip())
+    return para
+
+
+def _bullets(lines: list[str] | None) -> tuple[str, ...]:
+    return tuple(l.rstrip() for l in (lines or []) if l.startswith("- "))
+
+
+def extract_description(change: Change) -> Description:
+    """Read a change's published description out of its proposal.
+
+    Nothing here is inferred or repaired. Every failure raises, because the
+    failures this guards against are the quiet ones: a summary that is merely
+    plausible reads exactly like a correct one."""
+    path = change.path / "proposal.md"
+    try:
+        where = path.relative_to(REPO_ROOT).as_posix()
+    except ValueError:  # outside the repo; the absolute path is still useful
+        where = str(path)
+
+    def fail(problem: str) -> ProposalError:
+        return ProposalError(f"{change.name}: {problem} ({where})")
+
+    if not path.is_file():
+        raise fail("no proposal.md")
+    lines = path.read_text(encoding="utf-8").splitlines()
+
+    why = _section(lines, "## Why")
+    if why is None:
+        raise fail("no '## Why' section")
+    lead = _lead_paragraph(why)
+    if not lead:
+        raise fail("'## Why' has no opening paragraph")
+    if lead[0].lstrip().startswith(NON_PROSE_PREFIXES):
+        raise fail(
+            f"'## Why' opens with {lead[0].strip()[:48]!r} rather than prose; "
+            "its first paragraph is published as the issue description"
+        )
+
+    what = _section(lines, "## What Changes")
+    if what is None:
+        raise fail("no '## What Changes' section")
+    changes = _bullets(what)
+    if not changes:
+        raise fail("'## What Changes' has no top-level bullets")
+
+    out_of_scope = _bullets(_section(lines, "### Explicitly out of scope"))
+
+    for line in (*lead, *changes, *out_of_scope):
+        if CHECKBOX_RE.match(line):
+            raise fail(
+                f"published text contains a checkbox: {line.strip()[:48]!r}; "
+                "GitHub would count it in the issue's task-list progress"
+            )
+
+    return Description(" ".join(lead), changes, out_of_scope)
+
+
+def build_issue_body(change: Change, desc: Description) -> str:
+    """Compose the issue body from the proposal and tasks.md.
+
+    Order matters. The description leads, because a body opening with a link
+    list reads as navigation rather than as a document. Status stays high — it
+    is the one line someone scanning for state wants. Links sit below the
+    prose: they are what you click after deciding you care. Nothing here is
+    folded behind <details>; a summary nobody expands is the state this
+    change exists to fix."""
     rel = change.path.relative_to(REPO_ROOT).as_posix()
     lines = [
         "<!-- Generated by scripts/sync-project-board.py. Edits here are overwritten. -->",
         "",
+        desc.lead,
+        "",
         f"**Status:** {change.status} · **Tasks:** {change.progress}",
         "",
-        f"- [proposal]({rel}/proposal.md)",
+        "**What changes**",
+        "",
+        *desc.changes,
     ]
+    if desc.out_of_scope:
+        lines += ["", "**Out of scope**", "", *desc.out_of_scope]
+
+    lines += ["", f"- [proposal]({rel}/proposal.md)"]
     if (change.path / "design.md").is_file():
         lines.append(f"- [design]({rel}/design.md)")
     specs = sorted((change.path / "specs").rglob("spec.md")) if (change.path / "specs").is_dir() else []
@@ -187,6 +311,8 @@ def build_issue_body(change: Change) -> str:
 
     tasks = change.path / "tasks.md"
     if tasks.is_file():
+        # Verbatim: OpenSpec already writes GitHub checkbox markdown, so the
+        # native task list and its progress bar need no transformation.
         lines.append("---")
         lines.append("")
         lines.append(tasks.read_text(encoding="utf-8").rstrip())
@@ -257,13 +383,34 @@ def sync(dry_run: bool) -> int:
         return 1
 
     print(f"Found {len(changes)} change(s)\n")
+
+    # Preflight. Every proposal is read before anything is written, so a
+    # proposal that cannot supply a description stops the whole run rather
+    # than leaving one card stale beside four current ones — the exact
+    # condition a derived board exists to make impossible. Every failure is
+    # reported, not just the first, so one pass names all the work.
+    descriptions: dict[str, Description] = {}
+    failures: list[str] = []
+    for change in changes:
+        try:
+            descriptions[change.name] = extract_description(change)
+        except ProposalError as exc:
+            failures.append(str(exc))
+    if failures:
+        sys.stdout.flush()  # keep the report above the errors, not after them
+        for failure in failures:
+            print(f"error: {failure}", file=sys.stderr)
+        print(f"\n{len(failures)} proposal(s) could not be read. Nothing was written.",
+              file=sys.stderr)
+        return 1
+
     if not dry_run:
         ensure_labels(changes)
     on_board = {} if dry_run else project_items()
     actions = 0
 
     for change in changes:
-        body = build_issue_body(change)
+        body = build_issue_body(change, descriptions[change.name])
         issue = find_issue(change.issue_title)
         want_state = "CLOSED" if change.archived else "OPEN"
 
