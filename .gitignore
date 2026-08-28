@@ -5,10 +5,15 @@
 # repository is public, so a key that reaches its history can only be remedied
 # by rotating the key — deleting the commit does not reach forks or caches.
 # Keep every credential in .env.local, which is never committed.
+#
+# No env file is committed at all, .env.example included. A template with
+# empty values still names every credential the project uses, and the one
+# thing a public repository should not publish is a checklist of what to
+# go looking for.
 # ---------------------------------------------------------------------------
 .env
 .env.*
-!.env.example
+.env.example
 
 # ---------------------------------------------------------------------------
 # Supabase CLI local state
