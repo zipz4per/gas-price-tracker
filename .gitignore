@@ -48,6 +48,11 @@ build/
 .claude/settings.local.json
 .mcp.json
 
+# Session artifacts — context-usage dumps written to the repo root by name,
+# e.g. 2026-08-28-034747-context-usage.txt. Diagnostics about a session, not
+# about the project.
+*-context-usage.txt
+
 # ---------------------------------------------------------------------------
 # Credential hardening
 #
