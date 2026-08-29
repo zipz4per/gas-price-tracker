@@ -76,3 +76,47 @@ A bug's lifecycle maps onto the board's existing status column:
 
 *Won't fix* and *not a bug* have no column because they are not stages. They are
 closures, and GitHub's "closed as not planned" already says so.
+
+## Archiving one
+
+```
+  /opsx:archive-bug <name>
+```
+
+`/opsx:archive` cannot do it. That workflow resolves its target with
+`openspec status --change`, and the OpenSpec CLI enumerates `openspec/changes/`
+only, so a bug comes back *"Change '<name>' not found"* and it never gets a
+directory to move. Its middle steps would not fit one anyway — the artifact
+graph, `tasks.md` and the delta-spec sync all read that same JSON, and a bug has
+none of the three.
+
+`/opsx:archive-bug` reads `report.md` directly and checks four things:
+
+```
+  Fixed by                    names a commit, a change, or won't fix — not still pending
+  Does this need a change?    answered
+  the change it names         already in openspec/changes/archive/
+  Fix tasks                   no open boxes (_None._ counts as done)
+```
+
+The third has no counterpart in the change workflow, and it is why this is a
+workflow rather than a bare `mv`. A bug whose fix lives in a change waits for
+that change to archive, because the thing someone searches for later is the
+symptom, not the change that repaired it.
+
+None of the four blocks — each warns and asks. The only hard failure is a name
+collision in `openspec/bugs/archive/`, which would overwrite a record. A gate
+that fails is a fact about the report, so the fix is to finish the report, never
+to edit it into passing.
+
+Archiving does not touch the board; `scripts/sync-project-board.py` is what moves
+the card to **Done** and closes the issue.
+
+**Where these live.** `.claude/skills/openspec-archive-bug/SKILL.md` and
+`.claude/commands/opsx/archive-bug.md` are hand-written and permanent. The
+routing paragraph in `.claude/commands/opsx/archive.md` and
+`.claude/skills/openspec-archive-change/SKILL.md` — the part that makes
+`/opsx:archive <a-bug>` redirect instead of failing — is a local edit to a
+generated file, and `openspec update` will delete it. Losing it costs the
+shorthand, not the capability: `/opsx:archive-bug` still works. Re-paste it from
+this file's history when it goes.

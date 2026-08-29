@@ -12,7 +12,8 @@ columns, editing an issue body, or ticking a checkbox on GitHub does **not**
 move any work — and the next sync overwrites it.
 
 To change what the board shows, change the repository: tick a task in a
-change's `tasks.md`, or archive the change. Then run the sync.
+change's `tasks.md` or a bug report's fix tasks, or archive the record. Then run
+the sync.
 
 The board carries **two kinds of record**. A change is a commitment, described
 by a proposal and tracked by `tasks.md`. A bug is an observation, described by
@@ -72,6 +73,17 @@ A bug also stays open until its change archives, rather than closing the moment
 a change is filed to fix it. Six months on, the search is for the symptom, not
 for the change that fixed it — a closed bug pointing at a change is a redirect,
 an open one is the answer.
+
+That wait is enforced rather than remembered: `/opsx:archive-bug` refuses to
+move a bug whose report names a change until that change is itself in
+`openspec/changes/archive/`.
+
+**The two archive commands are not interchangeable.** `/opsx:archive` handles
+changes; `/opsx:archive-bug` handles bugs. The OpenSpec CLI enumerates
+`openspec/changes/` only, so it cannot see a bug at all, and the change
+workflow's middle steps — artifact graph, `tasks.md`, delta-spec sync — have no
+counterpart in a report. `openspec/bugs/README.md` covers the split and what it
+costs to maintain.
 
 `Ready to archive` is the one worth having. It catches a change whose work is
 complete but which hasn't been archived and whose specs haven't been synced —

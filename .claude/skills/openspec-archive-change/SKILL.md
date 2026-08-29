@@ -1,7 +1,7 @@
 ---
 name: openspec-archive-change
 description: Archive a completed change in the experimental workflow. Use when the user wants to finalize and archive a change after implementation is complete.
-allowed-tools: Bash(openspec:*)
+allowed-tools: Bash(openspec:*), Bash(ls:*), Bash(mkdir:*), Bash(mv:*)
 license: MIT
 compatibility: Requires openspec CLI.
 metadata:
@@ -17,6 +17,17 @@ Archive a completed change in the experimental workflow.
 `<capability-path>` is the spec directory relative to `specs/` (for example, `user-auth` or `identity/user-auth`). Preserve the full path from each delta spec when resolving its main spec.
 
 **Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
+
+**Bug records (project-local addition):** Before step 1, check whether the
+selected name resolves to `openspec/bugs/<name>/report.md`. If it does, this
+workflow does not apply: hand off to the `openspec-archive-bug` skill
+(`/opsx:archive-bug <name>`) and stop. A bug is not an OpenSpec change —
+`openspec status --change` returns *not found* for one, so every step below that
+consumes its JSON has nothing to work with.
+
+This paragraph is a local edit to a generated file and `openspec update` will
+remove it. The skill and command it points to are hand-written and survive, so a
+lost bridge costs the `/opsx:archive` shorthand, not the capability.
 
 **Steps**
 
