@@ -88,7 +88,32 @@ warning that a reset discards one.
 
 ## What the fix changed
 
-_Pending._
+Absence now carries a reason, and the reason is the true one.
+
+`get_doe_reference_prices()` reports which of three cases holds whenever
+`has_data` is false — `no_data_ingested`, `locality_not_covered`,
+`fuel_type_not_reported` — checked most-general-first, because they nest. The
+enum is null exactly when there is data, so a no-data row without a reason is
+not representable.
+
+`get_stations_with_reference_prices()` composes its sentence from that reason
+rather than from the single explanation it used to have, and adds the two cases
+only it can see: `brand_not_reported` and `brand_not_identified`. On an empty
+database all 34 Taguig City stations now say *"No reference price: no DOE
+reference data has been ingested yet"* instead of blaming DOE for 34 brands it
+reports perfectly well.
+
+The scenario that would have caught this now exists in both capabilities:
+*"Nothing ingested is distinct from nothing reported"* in `doe-reference-prices`,
+and *"A station is not told the source is silent when nothing was ingested"* in
+`station-registry`. Neither could have been satisfied by the old code.
+
+The data-loss half is closed separately and more simply than expected.
+`supabase/seed.sql` is generated from the recorded runs by
+`scripts/generate-doe-seed.py` and committed, and `[db.seed] enabled = true` was
+already in `config.toml` — so a reset now restores the load rather than
+destroying it. Verified by fingerprinting the read path across every locality and
+fuel type before and after a reset: identical, not merely the same row count.
 
 ## Does this need a change?
 

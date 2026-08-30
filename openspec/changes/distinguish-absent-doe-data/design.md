@@ -64,6 +64,41 @@ reason than the evidence supports is precisely the defect.
 `has_data` stays. It is a real, specified concept and the enum does not replace
 it; the enum says *why* when it is false, and is null when it is true.
 
+### Case D is the station path's to establish, not the reference path's
+
+**Found in task 1.1, and it changed the spec.** The four cases are not
+symmetrical in the way the proposal assumed.
+
+`get_doe_reference_prices('Lipa City','RON_95')` returns **four brand rows out of
+ten registered retailers**. A brand the report did not carry has no row at all —
+its absence is the absence of a row, not a row saying it is absent. So there is
+nothing for case D's reason to be attached to, and the scenario as first written
+was unsatisfiable.
+
+Two ways out. Emit a row per registered brand, six of them saying
+`brand_not_reported`; or accept that D is a question you can only ask while
+holding a brand, which the reference path never is.
+
+The second is right, and not only because it is smaller. Retrieval for a locality
+and fuel type is not a question about any particular brand, so an answer
+enumerating every registered brand would be inventing the question to justify the
+answer. The station read path *does* hold a brand — that is what a station is —
+and its LEFT join already discovers the miss. `station-registry` already carries
+the scenario requiring it to say so truthfully.
+
+```
+  get_doe_reference_prices        A, B, C          the three it can observe
+  get_stations_with_reference_…   A, B, C inherited
+                                  + D              from its own join miss
+                                  + brand unknown  from its own null brand_code
+```
+
+The cost is that the enum is not exhaustive over "reasons a station has no
+figure" in one place; it is assembled across two, with the station path owning
+the two cases only it can see. That is the same division `get_doe_reference_prices`
+already makes for proxy attribution and run gating: each path owns the
+obligations it is in a position to discharge.
+
 ### The reason is not an ignorable flag
 
 `fix-unrecognised-read-inputs` rejected adding a `recognised` boolean beside

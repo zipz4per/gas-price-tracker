@@ -121,6 +121,34 @@ select status, failure_reason from public.doe_load_runs
 where id = '<the returned run id>';
 ```
 
+## 6a. Regenerate the seed
+
+```bash
+python3 scripts/generate-doe-seed.py --linked
+git add supabase/seed.sql && git commit
+```
+
+**Do not skip this.** The payload you just typed exists nowhere but in the
+database. `supabase db reset` re-runs the migrations and drops everything they
+did not create, so without a regenerated seed the load is destroyed by a routine
+local command, and the only way back is to find this document again and read the
+same table again.
+
+That is not hypothetical — it happened on 2026-08-31 and is filed as
+`doe-data-lost-on-db-reset` (#17). It was recoverable only because hosted still
+held the rows.
+
+`supabase/config.toml` already carries `[db.seed] enabled = true`, so
+`supabase/seed.sql` is loaded automatically after every reset. Regenerating it is
+the whole of what you have to do.
+
+The seed is **generated, never hand-edited**. Editing it by hand would make it a
+second hand-typed payload, which is the problem it exists to solve.
+
+Stations are not seeded and do not need to be: they are re-importable from the
+provider with `python3 scripts/import-stations.py`. The DOE figures are the
+irreplaceable part, because they came off a PDF by eye.
+
 ## 7. If the run failed
 
 Nothing was stored and the previous week's data is untouched and still being
