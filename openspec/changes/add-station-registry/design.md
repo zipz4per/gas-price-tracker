@@ -239,6 +239,24 @@ It gives the client three states rather than two: a reported price, no report bu
 
 The registry starts empty and fills locality by locality. No stations for a locality returns no stations, distinguishable from a locality that is not registered at all — the same explicit-absence contract the reference-price read path already follows.
 
+### Stations are distinguishable in the data, and not by name
+
+Verified 2026-08-31: Lipa City has **twelve Petron stations**, twelve distinct
+place ids and twelve distinct coordinate pairs — and **one distinct name**. All
+twelve are called exactly "Petron".
+
+The registry is correct: they are separate rows and a map places them correctly.
+But a list rendered from `station_name` alone shows twelve identical entries,
+which is a worse experience than showing none. The disambiguators available are
+address (36 of 52 in Lipa, 4 of 10 in Malvar, 24 of 34 in Taguig) and
+coordinates, which become distance once there is a device location.
+
+Recorded here rather than fixed: the read path returns everything a client needs
+to disambiguate, and choosing between address and distance is a client decision
+this change explicitly does not make. It is noted because "stations are
+distinguishable" is true at the data layer and easy to assume at the UI layer,
+where it is not.
+
 ## Risks / Trade-offs
 
 - **ODbL share-alike reaches the stations table** → provider-derived rows stay separable from our own data so the obligation is bounded to what it actually covers; attribution is carried to any surface that displays it.

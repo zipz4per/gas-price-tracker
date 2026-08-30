@@ -45,11 +45,11 @@
 - [x] 6.1 Import stations for Malvar, Lipa City, and Taguig City from the provider, and verify each imported station resolves to a brand or the review list, a locality, and valid coordinates
 - [x] 6.2 Verify the import is idempotent by running it twice and confirming no duplicate stations and no changed station count
 - [x] 6.3 Verify a station whose brand DOE does not report is imported normally, confirming DOE plays no part in whether a station exists
-- [ ] 6.4 Record the review list of unresolved names produced by the import, and resolve each either by adding a rule or by recording why the station is excluded
+- [x] 6.4 Record the review list of unresolved names produced by the import, and resolve each either by adding a rule or by recording why the station is excluded
 - [x] 6.5 Verify the imported count is of the order measured on 2026-08-31 — 10 in Malvar, 52 in Lipa City, 34 in Taguig City, 96 total — and investigate any locality that comes back materially short rather than accepting a plausible number. These replace the 2026-08-28 survey's 14/52/87, which did not reproduce; see the annotation in `design.md`
 
 ## 7. End-to-end verification
 
-- [ ] 7.1 Verify every scenario in `specs/station-registry/spec.md` against the local stack and record any that cannot be exercised
-- [ ] 7.2 Verify two stations of the same brand in one locality are returned as separate, distinguishable entries
+- [x] 7.1 Verify every scenario in `specs/station-registry/spec.md` against the local stack and record any that cannot be exercised. All 18 exercised. The reference-price scenarios needed DOE data restored from hosted first — `supabase db reset` destroys the hand-loaded DOE rows, which is filed as a bug
+- [x] 7.2 Verify two stations of the same brand in one locality are returned as separate, distinguishable entries
 - [ ] 7.3 Push the migrations to hosted, verify no schema drift, and verify anonymous reads of the station list succeed there
