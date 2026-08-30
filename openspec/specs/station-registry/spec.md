@@ -124,6 +124,10 @@ Until a price is observed at a station itself, the system SHALL supply that stat
 
 That figure SHALL be presented as what it is — a range across all stations of that brand in the locality — and MUST NOT be presented as a price observed at the station. A brand whose stations differ in price yields a range that is true of the group and of no individual member.
 
+Where a station has no reference range, the system SHALL state the reason, and that reason SHALL be the actual one. It MUST NOT attribute the absence to the source publishing no figures unless that is what happened; an absence caused by nothing having been ingested, by the ingested data not covering the locality, or by the station's brand not yet being identified SHALL each be reported as itself.
+
+The stated reason SHALL be produced by the system rather than assembled by the consumer, so that a consumer cannot state a reason the system did not establish.
+
 #### Scenario: A station carries its brand's reference range
 
 - **GIVEN** a station whose brand has DOE reference data for a fuel type in its locality
@@ -150,3 +154,19 @@ That figure SHALL be presented as what it is — a range across all stations of 
 - **WHEN** that station is retrieved for that fuel type
 - **THEN** the station is still returned
 - **AND** the absence of reference data is explicit rather than a zero or a blank
+- **AND** the stated reason is that the source published no figures for that brand
+
+#### Scenario: A station is not told the source is silent when nothing was ingested
+
+- **GIVEN** no reference data has been ingested
+- **WHEN** stations are retrieved for a registered locality and fuel type
+- **THEN** every station is still returned
+- **AND** each states that no reference data has been ingested
+- **AND** none states that the source published no figures for its brand
+
+#### Scenario: A station whose brand is unidentified says so
+
+- **GIVEN** a station whose provider name resolved to no registered brand
+- **WHEN** that station is retrieved for any fuel type
+- **THEN** the stated reason is that the station's brand is not yet identified
+- **AND** the reason is not attributed to the source
