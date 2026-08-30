@@ -52,4 +52,4 @@
 
 - [x] 7.1 Verify every scenario in `specs/station-registry/spec.md` against the local stack and record any that cannot be exercised. All 18 exercised. The reference-price scenarios needed DOE data restored from hosted first — `supabase db reset` destroys the hand-loaded DOE rows, which is filed as a bug
 - [x] 7.2 Verify two stations of the same brand in one locality are returned as separate, distinguishable entries
-- [ ] 7.3 Push the migrations to hosted, verify no schema drift, and verify anonymous reads of the station list succeed there
+- [x] 7.3 Push the migrations to hosted, verify no schema drift, and verify anonymous reads of the station list succeed there
