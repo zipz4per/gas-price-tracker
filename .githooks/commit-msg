@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""Require every commit to name the record that explains it.
+
+    Refs: add-commit-issue-links #14
+
+A commit spanning several records repeats the trailer, once per record. The
+name must resolve to a directory under openspec/; the number is what GitHub
+turns into a cross-reference on the issue.
+
+There is no exemption. Repository hygiene gets a record like everything else —
+see docs/commit-conventions.md for why, and `git commit --no-verify` for the
+escape hatch this project did not invent and cannot remove.
+
+Deliberately self-contained. A commit hook runs mid-rebase, in a detached
+worktree, with a syntax error freshly saved in scripts/, and with no network;
+importing the board client to reuse one regex would turn each of those into a
+failure to commit. The archive-date rule below is duplicated from
+ARCHIVE_DATE_RE in scripts/sync-project-board.py and must stay in step with it.
+
+Install:  git config core.hooksPath .githooks
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import textwrap
+import sys
+from pathlib import Path
+
+# Duplicated from scripts/sync-project-board.py — see the module docstring.
+ARCHIVE_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
+
+TRAILER_RE = re.compile(r"^Refs:[ \t]*(\S+)[ \t]+#(\d+)[ \t]*$", re.M)
+LOOSE_RE = re.compile(r"^\s*refs\b.*$", re.M | re.I)
+SCISSORS = "# ------------------------ >8 ------------------------"
+
+TITLE_PREFIXES = {"change": "[change] ", "bug": "[bug] "}
+
+
+def git(*args: str) -> str:
+    """Run a git command and return stdout, or "" when it fails."""
+    result = subprocess.run(["git", *args], capture_output=True, text=True)
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def known_records(root: Path) -> dict[str, str]:
+    """Every record name on disk, mapped to its kind.
+
+    Reads the filesystem rather than the index on purpose: a record is created
+    before its first commit, so at commit-msg time the directory exists but is
+    very often not staged yet.
+    """
+    found: dict[str, str] = {}
+    for tree, kind in (("changes", "change"), ("bugs", "bug")):
+        base = root / "openspec" / tree
+        for directory in (base, base / "archive"):
+            if not directory.is_dir():
+                continue
+            for path in sorted(directory.iterdir()):
+                if not path.is_dir() or path.name == "archive":
+                    continue
+                found[ARCHIVE_DATE_RE.sub("", path.name)] = kind
+    return found
+
+
+UNKNOWN_ISSUE = "could not resolve to an issue"
+
+
+def issue_title(number: str) -> str | None | bool:
+    """The issue's title, False when it demonstrably does not exist, else None.
+
+    None means the question could not be asked — gh missing, unauthenticated,
+    offline, rate-limited, slow — and the check is skipped, because a hook that
+    fails on a plane is a hook that gets uninstalled.
+
+    False is different. gh reached GitHub and was told the number resolves to
+    nothing, which is an answer, not an outage. Treating that as "unavailable"
+    would let #99999 through on a fully working machine.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "issue", "view", number, "--json", "title", "-q", ".title"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode == 0:
+        return result.stdout.strip()
+    return False if UNKNOWN_ISSUE in result.stderr.lower() else None
+
+
+def message_body(path: Path) -> str:
+    """The message as the author wrote it: no comments, no verbose diff."""
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    raw = raw.split(SCISSORS)[0]
+    lines = [ln for ln in raw.splitlines() if not ln.startswith("#")]
+    return "\n".join(lines).strip()
+
+
+def record_list(records: dict[str, str]) -> list[str]:
+    """The known record names, wrapped. A single 300-character line is not a
+    list anyone reads; it is a wall the eye slides off."""
+    return textwrap.wrap(
+        ", ".join(sorted(records)),
+        width=76,
+        initial_indent="  Records on disk: ",
+        subsequent_indent="                   ",
+        break_on_hyphens=False,   # every record name is hyphenated; splitting
+        break_long_words=False,   # one makes it unreadable and uncopyable
+    )
+
+
+def fail(*lines: str) -> None:
+    print("commit-msg: " + lines[0], file=sys.stderr)
+    for line in lines[1:]:
+        print(line, file=sys.stderr)
+    sys.exit(1)
+
+
+def main() -> None:
+    if len(sys.argv) < 2:
+        fail("no message file given.")
+
+    git_dir = git("rev-parse", "--git-dir")
+    if git_dir and (Path(git_dir) / "MERGE_HEAD").exists():
+        return  # A merge commit has no content of its own.
+
+    body = message_body(Path(sys.argv[1]))
+    if not body:
+        return  # Empty message; git aborts with a clearer complaint than ours.
+
+    root = Path(git("rev-parse", "--show-toplevel") or ".")
+    records = known_records(root)
+
+    trailers = TRAILER_RE.findall(body)
+    if not trailers:
+        hint = []
+        loose = [m.strip() for m in LOOSE_RE.findall(body) if m.strip()]
+        if loose:
+            hint = ["", f"  Found, but not in that form:  {loose[0]}"]
+        fail(
+            "no Refs: trailer.",
+            "",
+            "  Refs: <record-name> #<issue>",
+            "",
+            "  Every commit names the record that explains it. There is no",
+            "  exemption — see docs/commit-conventions.md.",
+            *hint,
+            "",
+            *record_list(records),
+        )
+
+    for name, number in trailers:
+        kind = records.get(name)
+        if kind is None:
+            fail(
+                f"no record named '{name}'.",
+                "",
+                "  The name must be a directory under openspec/changes/ or",
+                "  openspec/bugs/ (archived or not). Create the record first.",
+                "",
+                *record_list(records),
+            )
+
+        title = issue_title(number)
+        if title is None:
+            continue  # gh unavailable; the name check already passed.
+        if title is False:
+            fail(
+                f"there is no issue #{number}.",
+                "",
+                f"  '{name}' is a real record, but #{number} resolves to nothing.",
+                "  Run scripts/sync-project-board.py to file its issue first.",
+            )
+        expected = TITLE_PREFIXES[kind] + name
+        if title != expected:
+            fail(
+                f"#{number} is not '{name}'.",
+                "",
+                f"  #{number} is titled: {title}",
+                f"  expected:           {expected}",
+            )
+
+
+if __name__ == "__main__":
+    main()

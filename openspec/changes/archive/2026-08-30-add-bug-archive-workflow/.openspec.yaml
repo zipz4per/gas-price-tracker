@@ -1,0 +1,10 @@
+schema: spec-driven
+created: 2026-08-30
+
+# Written after the work shipped. See the note at the top of proposal.md.
+layer: tooling
+
+# An archive workflow moves a directory and checks the record is finished. It
+# is a fact about how this repository keeps its own records, not behaviour the
+# project promises to anyone.
+skip_specs: true

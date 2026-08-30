@@ -1,0 +1,9 @@
+schema: spec-driven
+created: 2026-08-30
+layer: tooling
+
+# Which record a commit belongs to is a fact about the repository's own history,
+# not behaviour the project promises to anyone. This change makes that fact
+# explicit in the commit message and mechanically checked; it changes no
+# capability.
+skip_specs: true
