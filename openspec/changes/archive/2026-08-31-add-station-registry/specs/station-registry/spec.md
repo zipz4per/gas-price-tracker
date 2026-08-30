@@ -8,14 +8,17 @@ Holds the individual gas stations a driver can actually visit — what each one 
 
 The system SHALL record each gas station as its own entity, distinct from its brand. A locality MAY contain several stations, and several of those MAY carry the same brand.
 
-A station SHALL carry a name that distinguishes it from other stations of the same brand in the same locality, so a driver can tell which one is being referred to.
+Stations sharing a brand within one locality SHALL remain individually identifiable, and the system SHALL return enough to tell them apart: each station's own provider identifier and its own coordinates always, and its address wherever the provider supplies one.
+
+A distinguishing *name* MUST NOT be assumed. Providers commonly return the bare brand name for every station of that brand, so the system SHALL NOT treat the name as an identifier, and SHALL NOT merge or omit stations that share one.
 
 #### Scenario: Two stations of one brand in one locality
 
 - **GIVEN** a locality containing two stations that both carry the brand Petron
 - **WHEN** the stations in that locality are listed
 - **THEN** both stations appear as separate entries
-- **AND** each is distinguishable by its own name
+- **AND** each carries its own provider identifier and its own coordinates
+- **AND** neither is merged into the other or omitted because they share a name
 
 #### Scenario: A brand is an attribute, not an identity
 
