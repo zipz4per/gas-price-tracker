@@ -84,7 +84,7 @@ warning that a reset discards one.
 
 ## Fixed by
 
-_Pending._
+`distinguish-absent-doe-data`
 
 ## What the fix changed
 
@@ -92,14 +92,27 @@ _Pending._
 
 ## Does this need a change?
 
-_Not yet decided._
+**Yes, added requirement** — `distinguish-absent-doe-data`.
 
-<Leaning yes, added requirement. The likely shape is that the system should be
-able to distinguish "no DOE data has ever been loaded" from "DOE reported
-nothing for this brand", which nothing in `openspec/specs/` currently promises —
-`doe-reference-prices` requires absence be an explicit state but says nothing
-about the absence of the whole dataset. A saved payload or a seed file is the
-smaller half; the distinguishable state is the part that needs a requirement.>
+The spec was silent rather than wrong. `doe-reference-prices` requires that
+absence be an explicit state, and it is; `station-registry` requires that a
+station's absent reference not be a zero or a blank, and it is not. Neither says
+anything about whether the *stated reason* for the absence must be the true one,
+so the implementation chose, and it chose the most specific of four possible
+explanations.
+
+The obligation is added by extending those two existing requirements rather than
+by writing standalone ones, because "absence is explicit" and "absence says which
+absence it is" are the same promise at two levels of detail, and splitting them
+would let a future reader satisfy one while contradicting the other.
+
+Investigation also narrowed the fix. No new storage is needed: `doe_load_runs`
+already records whether any load has succeeded and `doe_locality_reports` records
+what each covered, so all four cases are already distinguishable from data on
+hand. And the seed half turned out to need no mechanism either —
+`supabase/config.toml` already carries `[db.seed] enabled = true`, so a
+`supabase/seed.sql` is loaded after every reset. The file has simply never
+existed.
 
 ## Fix tasks
 
