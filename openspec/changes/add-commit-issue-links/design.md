@@ -22,11 +22,17 @@ commit touched:
        63f9b00  Give bug reports an archive workflow of their own   has NONE
 ```
 
-Path inference is weaker than it looks even where it works. Only 9 of the 30
-touch exactly one change directory; 20 touch none, and `d67611d` touches three.
+Path inference is weaker than it looks even where it works. Asked which
+*change* a commit belongs to, it answers for 20 of the 30; 8 touch no change
+directory at all, and 2 touch several — `d67611d` four and `dce8c1b` seven.
 That is the same measurement that forced `change_for_commit()` into
-unique-match-or-nothing, and it is why inference cannot be the mechanism here —
-it silently produces no answer four times out of five.
+unique-match-or-nothing, and it is why inference cannot be the mechanism here:
+it is silent on a third of history, and silent in a way indistinguishable from
+"this commit belongs to nothing".
+
+(Re-measuring this corrected the figures recorded in `add-issue-dependencies`,
+which had it as 9 resolving and 20 not. The rule it justified is unaffected;
+the numbers were simply wrong, and are fixed in that record too.)
 
 GitHub's own mechanism is a `#N` in the message. On push to the default branch
 it becomes a *referenced this issue* timeline event pointing back at the commit,

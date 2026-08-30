@@ -64,14 +64,22 @@ So causation is published as a **cross-reference in the body** — `1a3f1e9  Add
 ```
   resolves to   commits   what they are
   ────────────────────────────────────────────────────────────────────────
-  0 changes        20     docs, fixes, bootstrap, board-sync work
-  1 change          9     ordinary implementation commits
-  3 changes         1     d67611d, which scaffolded three at once
+  0 changes         8     hygiene, bug-only work, and the two unrecorded commits
+  1 change         20     ordinary implementation and archive commits
+  several           2     d67611d (4 changes), dce8c1b (7)
 ```
 
-Both shas that matter today resolve uniquely, and most commits do not resolve at all. So the rule is: **resolve only on a unique match; otherwise print the sha alone.** A `Caused by` that lands on `d67611d` gets no cross-reference rather than an arbitrary one of three, and a bug caused by a commit outside any change — which is most of them — reads exactly as it does now. An author who wants the link anyway can name the change in the report, and an explicit name wins over resolution.
+> **Corrected 2026-08-30.** This table first read 20 / 9 / 1, with `d67611d`
+> credited to three changes. Re-measured while building
+> `add-commit-issue-links`, none of those three numbers reproduces under any
+> variant of the regex, and `d67611d` touches four. The decision below is
+> unchanged — it turns on the 2 ambiguous commits and the 8 that resolve to
+> nothing, both of which are real — but the emphasis was backwards: most
+> commits do resolve, not most fail to.
 
-This keeps a wrong edge impossible. The cost is that some causation stays unlinked, which is the right direction to fail: the sha and subject are still printed, and they are what `git log -S` needs.
+Both shas that matter today resolve uniquely. So the rule is: **resolve only on a unique match; otherwise print the sha alone.** A `Caused by` that lands on `d67611d` gets no cross-reference rather than an arbitrary one of four, and a bug caused by a commit outside any change reads exactly as it does now. An author who wants the link anyway can name the change in the report, and an explicit name wins over resolution.
+
+This keeps a wrong edge impossible. The cost is that causation from those 10 commits stays unlinked, which is the right direction to fail: the sha and subject are still printed, and they are what `git log -S` needs.
 
 **Reconcile, do not append.** Each run computes the set of blockers an issue should have and issues the difference — `POST` for missing, `DELETE` for extra. Without the delete half, an edge added by hand on GitHub would persist forever and become a second source of truth the repository cannot see, which is the exact property the board exists to avoid. Reconciliation is also what makes a re-run report `0 update(s) applied`, the invariant that proves the projection is complete.
 

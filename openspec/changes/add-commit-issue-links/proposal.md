@@ -41,8 +41,9 @@ because nothing was looking.
   past work carries the same link. Idempotent by reading its own marker back;
   it stores nothing.
 - **`change_for_commit()` prefers the trailer.** The sync infers a commit's
-  change from the paths it touched, which resolves 9 commits of 30. Reading a
-  trailer resolves it exactly, and the fallback stays for everything older.
+  change from the paths it touched, which leaves 10 commits of 30 unresolved —
+  8 touching no change directory and 2 touching several. Reading a trailer
+  resolves it exactly, and the fallback stays for everything older.
 - **A retro record for `63f9b00`**, filed and archived in the same breath,
   describing what already shipped and saying plainly that it was written after
   the fact.

@@ -9,15 +9,14 @@
       timeline before pushing and after.
 - [x] 1.2 Confirm the event links back to the commit, so the issue→commit
       direction works without anything else being written.
-- [ ] 1.3 Confirm a repeated trailer produces an event on each issue named, not
-      just the first. *Deferred to section 5, whose commit legitimately names two
-      records; a throwaway commit would prove it against a fixture instead.*
+- [x] 1.3 Confirm a repeated trailer produces an event on each issue named, not
+      just the first. Verified by `2521898`, which names #14 and #15; both
+      timelines carry the event.
 - [x] 1.4 Confirm a bare sha inside an issue *comment* autolinks to the commit,
       since the backfill depends on it.
-- [ ] 1.5 Confirm a `#N` naming a closed issue still produces the event —
+- [x] 1.5 Confirm a `#N` naming a closed issue still produces the event —
       most records are archived, so most trailers will name closed issues.
-      *Deferred to section 5, where the retro record is archived and its issue
-      closed before the commit that names it.*
+      Verified by `2521898`: #15 was already closed and got the event anyway.
 - [x] 1.6 Record every result in `design.md` under Context, including any
       assumption that turned out wrong.
 
@@ -67,64 +66,70 @@
 
 ## 5. The retro record for `63f9b00`
 
-- [ ] 5.1 Create `openspec/changes/add-bug-archive-workflow/` describing the
+- [x] 5.1 Create `openspec/changes/add-bug-archive-workflow/` describing the
       bug-archive workflow that shipped in `63f9b00`: proposal, design, tasks
       all complete, `layer: tooling`, `skip_specs: true`.
-- [ ] 5.2 State in the proposal that it was written after the fact, and name the
+- [x] 5.2 State in the proposal that it was written after the fact, and name the
       commit. A retro record that reads as though it preceded the work is worse
       than no record.
-- [ ] 5.3 Reconstruct the design decisions from the commit message rather than
+- [x] 5.3 Reconstruct the design decisions from the commit message rather than
       re-deriving them, so the record says what was actually decided.
-- [ ] 5.4 `openspec validate --strict` passes.
-- [ ] 5.5 Archive it immediately to `openspec/changes/archive/2026-08-30-add-bug-archive-workflow/`.
-- [ ] 5.6 Sync and confirm the board files it as Done with `layer: tooling` and
+- [x] 5.4 `openspec validate --strict` passes.
+- [x] 5.5 Archive it immediately to `openspec/changes/archive/2026-08-30-add-bug-archive-workflow/`.
+- [x] 5.6 Sync and confirm the board files it as Done with `layer: tooling` and
       no capability label.
 
 ## 6. Backfill
 
-- [ ] 6.1 Write `scripts/backfill-commit-links.py`. It walks history, selects
+- [x] 6.1 Write `scripts/backfill-commit-links.py`. It walks history, selects
       commits with no `Refs:` trailer, maps each to its record by path, and
       groups them by issue.
-- [ ] 6.2 Carry the two overrides as a literal table with a comment on each:
+- [x] 6.2 Carry the two overrides as a literal table with a comment on each:
       `dbcb277 -> board-issue-links-are-relative`,
       `63f9b00 -> add-bug-archive-workflow`.
-- [ ] 6.3 Post one comment per issue listing its commits, sha and subject, under
+- [x] 6.3 Post one comment per issue listing its commits, sha and subject, under
       a fixed marker heading.
-- [ ] 6.4 Make it idempotent by reading comments back and skipping an issue that
+- [x] 6.4 Make it idempotent by reading comments back and skipping an issue that
       already carries the marker. Store nothing on disk.
-- [ ] 6.5 Report the commits that map to no record instead of failing on them,
+- [x] 6.5 Report the commits that map to no record instead of failing on them,
       and confirm the report is exactly the four hygiene commits.
-- [ ] 6.6 Give it `--dry-run`, printing every comment it would post in full.
-- [ ] 6.7 Dry run, read the output, then run it live.
-- [ ] 6.8 Run it a second time and confirm zero comments posted.
-- [ ] 6.9 Spot-check three issues in the browser: comment renders, shas autolink,
+- [x] 6.6 Give it `--dry-run`, printing every comment it would post in full.
+- [x] 6.7 Dry run, read the output, then run it live.
+- [x] 6.8 Run it a second time and confirm zero comments posted.
+- [x] 6.9 Spot-check three issues in the browser: comment renders, shas autolink,
       and the commits listed are the right ones.
+- [x] 6.10 Fix the record-path regex, which under `re.M` let `[^/]+` match a
+      newline: a file directly under `openspec/bugs/` made the captured name run
+      into the next path and shadow the real record. Same latent bug fixed in
+      `sync-project-board.py`.
 
 ## 7. The sync reads the trailer
 
-- [ ] 7.1 Teach `change_for_commit()` to read `Refs:` trailers first, falling
+- [x] 7.1 Teach `change_for_commit()` to read `Refs:` trailers first, falling
       back to path inference when there are none.
-- [ ] 7.2 Resolve to nothing when a commit carries several trailers naming
+- [x] 7.2 Resolve to nothing when a commit carries several trailers naming
       different changes, matching the existing unique-match-or-nothing rule.
-- [ ] 7.3 Ignore a trailer naming a bug — the helper answers which *change* a
+- [x] 7.3 Ignore a trailer naming a bug — the helper answers which *change* a
       commit belongs to, and a bug is not one.
-- [ ] 7.4 Confirm the 30 existing commits resolve exactly as before, since none
-      carries a trailer.
-- [ ] 7.5 Confirm a trailered commit resolves through the trailer even when it
+- [x] 7.4 Confirm the 30 existing commits resolve exactly as before, since none
+      carries a trailer. They do — and re-measuring showed the figures recorded
+      in `add-issue-dependencies` were wrong (20 resolve, not 9; `d67611d`
+      touches four changes, not three). Corrected in that record and here.
+- [x] 7.5 Confirm a trailered commit resolves through the trailer even when it
       touches no change directory — the case inference has always missed.
-- [ ] 7.6 Full sync, then a second run reporting `0 update(s) applied`.
+- [x] 7.6 Full sync, then a second run reporting `0 update(s) applied`.
 
 ## 8. Documentation and close-out
 
-- [ ] 8.1 Write `docs/commit-conventions.md`: the trailer, the setup command
+- [x] 8.1 Write `docs/commit-conventions.md`: the trailer, the setup command
       first, what the hook checks, why there is no exemption, and the ordering
       constraint that a record's issue must exist before its first commit.
-- [ ] 8.2 Name the four hygiene commits there as the historical exception, so
+- [x] 8.2 Name the four hygiene commits there as the historical exception, so
       the gap is documented rather than discovered.
-- [ ] 8.3 Cross-link from `docs/project-board.md` — the trailer points at board
+- [x] 8.3 Cross-link from `docs/project-board.md` — the trailer points at board
       issues, and someone reading about the board will want to know.
-- [ ] 8.4 Note in `docs/project-board.md` that backfill comments exist, are not
+- [x] 8.4 Note in `docs/project-board.md` that backfill comments exist, are not
       managed by the sync, and are lost on a board rebuild.
-- [ ] 8.5 `openspec validate --strict` passes for this change.
+- [x] 8.5 `openspec validate --strict` passes for this change.
 - [ ] 8.6 Confirm every commit made while implementing this change carries its
       own trailer.

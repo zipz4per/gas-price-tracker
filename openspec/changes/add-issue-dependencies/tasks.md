@@ -12,7 +12,7 @@
 - [x] 2.2 Resolve a `Fixed by` line to a change name, and verify a line naming a commit rather than a change resolves to nothing instead of guessing
 - [x] 2.3 Resolve a `Caused by` sha to the change directory the commit touched, and verify the resolution is taken only on a unique match
 - [x] 2.4 Verify a sha touching no change directory resolves to nothing, using `dbcb277`
-- [x] 2.5 Verify a sha touching several change directories resolves to nothing rather than picking one, using `d67611d`, which scaffolded three
+- [x] 2.5 Verify a sha touching several change directories resolves to nothing rather than picking one, using `d67611d`, which scaffolded four
 - [x] 2.6 Verify an unparseable or absent `Caused by` — including `spec was silent` — is a normal outcome that prints the section unchanged, not an error
 - [x] 2.7 Verify a change name written explicitly in the report wins over resolution, so an author can name a link the sync cannot derive
 - [x] 2.8 Map a resolved change name to its issue number across both the active tree and the archive, and verify a name that matches no record aborts the run in preflight

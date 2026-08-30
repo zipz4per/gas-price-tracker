@@ -107,6 +107,13 @@ LAYER_LABEL_COLORS = {
 KIND_LABEL_COLORS = {FEATURE: "0052cc", BUG: "b60205"}
 ARCHIVE_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
 
+# [^/\n]+ rather than [^/]+: under re.M the negated class still matches a
+# newline, so a file sitting directly under openspec/changes/ would let the
+# captured name run into the following path and shadow the real record —
+# turning a unique match into no match, silently. Latent today only because
+# nothing has ever been committed there.
+CHANGE_PATH_RE = r"^openspec/changes/(?:archive/)?([^/\n]+)/"
+
 # A checkbox anywhere in an issue body is counted by GitHub's task-list
 # progress bar, so one in quoted prose would inflate an issue's task count
 # while the board's own count — read from tasks.md — stayed right.
@@ -315,24 +322,44 @@ def read_declared_blocked_by(record_dir: Path) -> tuple[str, ...]:
 SHA_RE = re.compile(r"\b([0-9a-f]{7,40})\b")
 
 
-def change_for_commit(sha: str) -> str:
+def trailered_changes(sha: str, known: frozenset[str]) -> set[str]:
+    """The changes a commit's Refs: trailers name.
+
+    Filtered against the known change names, which is also how a trailer naming
+    a bug is dropped: this helper answers which *change* a commit belongs to,
+    and a bug is not one."""
+    out = git("show", "-s", "--format=%(trailers:key=Refs,valueonly=true)", sha)
+    return {
+        m.group(1) for m in re.finditer(r"^(\S+)\s+#\d+\s*$", out, re.M)
+    } & known
+
+
+def change_for_commit(sha: str, known: frozenset[str] = frozenset()) -> str:
     """The change a commit belongs to, or "" when that is not unambiguous.
 
-    Implementation commits tick their own tasks.md, so the change directory a
-    commit touched usually identifies it. Usually is not always: across this
-    repository most commits touch no change directory at all, and the one that
-    scaffolded the project touched three. So a unique match resolves and
-    everything else resolves to nothing — an absent link is recoverable from
-    the sha printed beside it, and a wrong one is not.
+    A Refs: trailer answers this exactly, and every commit written since
+    add-commit-issue-links carries one. Where there is none, fall back to
+    asking which change directory the commit touched — implementation commits
+    tick their own tasks.md, so that usually identifies it.
+
+    Usually is not always, which is why the fallback stays a fallback: across
+    the 30 commits that predate the trailer it answers for 20, while 8 touch no
+    change directory at all and 2 touch several. Either way a
+    unique match resolves and everything else resolves to nothing — an absent
+    link is recoverable from the sha printed beside it, and a wrong one is not.
 
     --name-only rather than --stat: --stat abbreviates long paths with an
     ellipsis, and these paths are long."""
+    named = trailered_changes(sha, known)
+    if named:
+        return named.pop() if len(named) == 1 else ""
+
     out = git("show", "--name-only", "--format=", sha)
     if not out:
         return ""
     names = {
         ARCHIVE_DATE_RE.sub("", m.group(1))
-        for m in re.finditer(r"^openspec/changes/(?:archive/)?([^/]+)/", out, re.M)
+        for m in re.finditer(CHANGE_PATH_RE, out, re.M)
         if m.group(1) != "archive"
     }
     return names.pop() if len(names) == 1 else ""
@@ -369,7 +396,7 @@ def resolve_cause(caused_by: str, known: frozenset[str]) -> str:
     if explicit:
         return explicit
     found = SHA_RE.search(caused_by)
-    return change_for_commit(found.group(1)) if found else ""
+    return change_for_commit(found.group(1), known) if found else ""
 
 
 def discover_records() -> list[Record]:

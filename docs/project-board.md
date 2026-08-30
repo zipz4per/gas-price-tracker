@@ -280,6 +280,43 @@ the issues that carried it, but the label itself is left in the repository,
 unused. Deleting a label removes it from every issue that ever carried it,
 which is destructive enough to be a person's decision rather than a sync's.
 
+Comments are in the second category, permanently. The sync never reads or writes
+them.
+
+## Commits
+
+Every commit names the record that explains it, in a trailer:
+
+```
+Refs: add-commit-issue-links #14
+```
+
+GitHub turns that into a *referenced this issue* event on the card's issue, so
+each card links to the commits that implemented it and each commit links back to
+the reasoning behind it. The full convention, the one-time
+`git config core.hooksPath .githooks`, and why there is no exemption are in
+[commit-conventions.md](commit-conventions.md).
+
+This is not part of the projection. `openspec/` still decides everything the
+sync writes; a commit trailer only asks GitHub to draw a line between an issue
+that already exists and a commit that already exists.
+
+One thing on those issues is neither derived nor managed. The thirty commits
+that predate the convention carry no trailer, and history was not rewritten to
+add one, so `scripts/backfill-commit-links.py` posted each issue's commits as a
+**comment** instead. Those comments:
+
+```
+  are written once, by hand, by that script     not by the sync
+  survive every sync                            the sync never touches comments
+  are lost if the board is rebuilt              re-run the script
+```
+
+They are the one place this board holds something it cannot regenerate from
+`openspec/`, and the trade was deliberate: the alternative was rewriting from
+the root commit, which moves all thirty shas and dangles the thirteen the
+records cite.
+
 ## Dependencies
 
 An issue's **blocked by** edges are derived the same way everything else is,
@@ -348,9 +385,14 @@ a first run on an empty one still ends correct.
 | `N problem(s) in openspec/` | A record has no valid `layer:`, a bug's `capability:` names no spec directory, a `kind:` or a bug's `blocked_by:` is declared, a `blocked_by:` names no change or forms a cycle, or a proposal or report can't supply a description | Fix what the error names; the sync wrote nothing |
 | An edge you drew by hand vanished | Edges between board issues are reconciled from `openspec/` | Declare it in `.openspec.yaml`, or accept that the repository doesn't state it |
 | A card is missing entirely | Its issue was deleted | Just run the sync; it recreates from scratch |
+| A commit isn't shown on its issue | The reference only appears once the commit is on the default branch | Push |
+| `commit-msg: no Refs: trailer` | Every commit names its record; there is no exemption | Add `Refs: <name> #<n>`, or create the record it belongs to first |
+| `commit-msg` never fires | `core.hooksPath` isn't set in this clone | `git config core.hooksPath .githooks` |
+| Backfill comments gone after a rebuild | They are comments, not projection; the sync cannot regenerate them | Re-run `scripts/backfill-commit-links.py` |
 
-Nothing here needs repair by hand beyond deleting orphans — the sync stores no
-state, so there is no bookkeeping to get out of step. That still holds now that
+Nothing here needs repair by hand beyond deleting orphans and re-running the
+backfill — the sync stores no state, so there is no bookkeeping to get out of
+step. That still holds now that
 edges are part of what a run produces: they are recomputed from `openspec/` and
 matched through issue titles, so a deleted issue is recreated and its edges are
 redrawn with it, new number and all.
