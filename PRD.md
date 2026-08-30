@@ -25,27 +25,39 @@ This app lets anyone open it, see recently reported prices for gas stations near
 - No payment, ads, or monetization (open question for later — see §14).
 - No route planning / navigation.
 - No historical price *charts* beyond a simple recent-history list per station (nice-to-have, not required).
-- No coverage outside the V1 launch area (see §4) — architecture should make expansion easy, but building out every region is out of scope for V1.
+- No coverage outside the V1 covered area (see §4) — architecture should make expansion easy, but building out every region is out of scope for V1.
 - No community moderation roles, admin dashboard, or manual review queue in V1 (may be revisited post-launch).
 
-## 4. V1 Scope: Launch Area
+## 4. V1 Scope: Coverage Area
 
-**Launch area: Malvar, Batangas.**
+**Coverage area: Malvar and Lipa City (Batangas), and Taguig City (NCR).**
+
+Malvar is the launch municipality and the one the proxy constraint below applies
+to. Lipa City and Taguig City are covered from the start because the app follows
+one person's actual route — home in Malvar, work in BGC — and a price app that
+covers only one end of a commute answers half the question.
 
 Constraint: DOE's Region IV-A (CALABARZON) pump price reports do not list Malvar as its own municipality. For V1, the app treats **Tanauan City, Batangas** (Malvar's neighboring municipality, present in the DOE report) as the DOE reference proxy for Malvar — i.e., DOE min/max/common prices shown for Malvar stations are sourced from the Tanauan City rows of the DOE report, clearly labeled as a proxy in the UI so users aren't misled about the source.
 
 This proxy mapping must be a configuration value (not hardcoded logic scattered through the app), so that when DOE adds Malvar directly, or the app expands to new municipalities, remapping is a data change, not a code change.
 
-Station data (name, brand, address, location) for Malvar itself is user- and/or admin-seeded at launch, since DOE does not provide per-station data — only municipality-level price ranges.
+**DOE is a price source only.** It publishes what a brand charges across a
+municipality. It never names a station, never counts them, and never places one
+on a map, so the system must not infer from the report that a station exists,
+how many there are, or where one is. A brand's absence from the report says
+nothing about the presence of stations carrying it — only that DOE did not
+monitor it that week.
+
+Station data (name, brand, address, coordinates) comes from an external places provider — OpenStreetMap, queried through Overpass — for every covered locality, not from a hand-typed list. DOE does not provide per-station data, which is true and does not lead where it first appears to: the answer is a source whose purpose is knowing what is on the ground, and which can be re-consulted as stations open, close, and rebrand. A list typed out once is stale the first time one of those happens.
 
 ## 5. Target Users
 
-- **Local drivers/riders in Malvar, Batangas** who want to know which nearby station currently has the best price before they go fill up.
+- **Local drivers/riders across the covered area** — Malvar and Lipa City in Batangas, and Taguig City in NCR — who want to know which nearby station currently has the best price before they go fill up.
 - **Casual contributors** — anyone who just filled up and wants to log what they paid, without creating an account.
 
 ## 6. User Stories
 
-1. As a driver, I open the app and immediately see a list/map of gas stations in Malvar with their most recent known price per fuel type, without logging in.
+1. As a driver, I open the app and immediately see a list/map of gas stations in the locality I am in — Malvar, Lipa City, or Taguig City — with their most recent known price per fuel type, without logging in.
 2. As a driver, I tap a station and see: current crowdsourced price(s) by fuel type, when each was last reported, and the DOE reference range (via the Tanauan City proxy) for context.
 3. As a driver who just bought fuel, I tap "Report a price," pick the station, fuel type, and price, and submit — no account, in a few taps.
 4. As a driver, I don't want to see obviously fake/spam prices cluttering the list — the app should quietly limit how often the same device can spam submissions.
@@ -54,13 +66,21 @@ Station data (name, brand, address, location) for Malvar itself is user- and/or 
 ## 7. Functional Requirements
 
 ### 7.1 Price Viewing
-- FR-1: Show a list (and, if feasible, a map) of gas stations in the launch area with the latest crowdsourced price per fuel type (RON 91/95/97/100, Diesel, Diesel Plus where applicable).
-- FR-2: Each station detail view shows: brand, address/barangay, per-fuel-type latest price with timestamp and relative age ("reported 3 hours ago"), and the DOE reference min/max/common price for that fuel type, labeled as sourced from Tanauan City (proxy).
-- FR-3: If a station has no crowdsourced report yet for a fuel type, fall back to showing only the DOE reference range with a clear "no recent reports" state — never show a blank/broken screen.
+- FR-1: Show a list (and, if feasible, a map) of gas stations in any covered locality with the latest crowdsourced price per fuel type (RON 91/95/97/100, Diesel, Diesel Plus where applicable).
+- FR-2: Each station detail view shows: brand, address/barangay, per-fuel-type latest price with timestamp and relative age ("reported 3 hours ago"), and — **where one exists** — the DOE reference min/max/common price for that fuel type, labeled as a locality-wide range for that brand rather than as a price observed at this station, and carrying the proxy attribution where one applies (Malvar's figures are sourced from Tanauan City).
+- FR-3: A station has three possible states for a fuel type, and all three must be shown explicitly rather than collapsed into two — never a blank or broken screen:
+
+  | State | What is shown |
+  |---|---|
+  | A crowdsourced report exists | the reported price, with timestamp and relative age |
+  | No report, but DOE prices this brand here | the DOE brand range, labelled, with a "no recent reports" state |
+  | No report and DOE does not price this brand here | an explicit no-reference-data state — not a zero, a blank, or a hidden station |
+
+  The third is not an edge case. DOE prices only the brands it happened to monitor, so on the survey behind the station registry at least 37 of 153 stations fall into it. A station stays on the map when DOE prices no brand of its kind in its locality; the reference price is the value that may be absent, never the station.
 - FR-4: Support pull-to-refresh and basic sort (e.g., cheapest first per fuel type).
 
 ### 7.2 Price Submission
-- FR-5: Any user can submit a price report: select station (from a pre-seeded list; "station not listed" flow optional for V1.1) → select fuel type → enter price → submit. No account/login step anywhere in this flow.
+- FR-5: Any user can submit a price report: select station (from the registry; "station not listed" flow optional for V1.1) → select fuel type → enter price → submit. No account/login step anywhere in this flow.
 - FR-6: Client-side validation: price must be numeric, positive, and within a sane bound (e.g., ₱30–₱120/liter, configurable) before submission is allowed.
 - FR-7: On submit, the app attaches the device's anonymous identifier (see §7.3) and a timestamp; the submission is written directly to Supabase (no server-side account needed, protected by RLS policies — see §10).
 - FR-8: Submitted prices appear immediately in the app (optimistic UI) pending any rate-limit checks.
@@ -80,7 +100,9 @@ Station data (name, brand, address, location) for Malvar itself is user- and/or 
 - FR-18: If a scheduled ingestion run fails (site structure changed, PDF unavailable, parse error), the job logs the failure and the app continues serving the last successfully ingested DOE data rather than showing nothing.
 
 ### 7.5 Stations Directory
-- FR-19: The app ships with a seeded list of gas stations in Malvar (name, brand, approximate coordinates, address) since DOE does not provide per-station data. This seed list is maintainable as data (e.g., a Supabase table), not hardcoded in the app.
+- FR-19: The station registry is sourced from an external places provider — OpenStreetMap, queried through Overpass — across every covered locality, and stored as data (a Supabase table), not hardcoded in the app. Each station carries the provider's stable place identifier, so a re-import matches an existing station rather than creating a near-duplicate when a pin moves or a listed name changes.
+- FR-19a: A station's brand is an **attribute of the station**, not a substitute for it. One locality holds many stations and several of them may carry the same brand — a locality's "Shell" is not one row. The provider's free-text name is resolved to a registered brand through maintained rules; a name that resolves to nothing goes to a review list, and is neither assigned a default brand nor dropped, because a station filed under the wrong brand is shown the wrong brand's reference price and a dropped station is a hole in the map with nothing to indicate it.
+- FR-19b: Every station the provider returns is registered, whether or not DOE prices its brand in that locality. Filtering the registry to brands DOE prices would cut the survey from 153 stations to 62 and would remove stations that plainly exist — Lipa City would lose seven Shell and five Phoenix, and Malvar would show two pins.
 - FR-20: (V1.1/open) Allow users to suggest a new station or a correction to an existing station's details, subject to the same anonymous device rate limiting as price submissions.
 
 ## 8. Non-Functional Requirements
@@ -94,7 +116,7 @@ Station data (name, brand, address, location) for Malvar itself is user- and/or 
 
 ## 9. Data Model (Supabase / Postgres — indicative)
 
-- **stations**: `id`, `name`, `brand`, `municipality`, `address`, `latitude`, `longitude`, `fuel_types` (array), `created_at`.
+- **stations**: `id`, `provider_place_id` (unique — the provider's stable identifier, and the station's identity across imports), `name`, `brand` (FK to `brands`; an attribute of the station, and not unique within a locality), `locality_id` (FK), `address`, `latitude`, `longitude`, `provider_fetched_at` (so provider-derived fields are distinguishable from data the system originates), `created_at`.
 - **price_reports**: `id`, `station_id` (FK), `fuel_type`, `price`, `device_id`, `submitted_at`, `status` (`active` / `rejected` — for future moderation).
 - **doe_reference_prices**: `id`, `region`, `province`, `city_municipality` (e.g. "Tanauan City"), `proxy_for_municipality` (e.g. "Malvar"), `fuel_type`, `brand`, `min_price`, `max_price`, `common_price`, `report_week_start`, `report_week_end`, `source_url`, `scraped_at`.
 - **submission_rate_limits**: `device_id`, `station_id`, `fuel_type`, `last_submitted_at` — used by the server-side rate-limit check (or implemented as a query against `price_reports` directly, TBD at implementation time).
@@ -117,7 +139,7 @@ Row-Level Security notes: since there is no auth, RLS policies key off the clien
 
 ## 12. Success Metrics (V1)
 
-- At least N active stations in Malvar with at least one crowdsourced price report within the last 7 days (target N TBD once station count is known).
+- At least N active stations across the covered localities with at least one crowdsourced price report within the last 7 days. The registry holds 96 stations as of the 2026-08-31 survey — 10 in Malvar, 52 in Lipa City, 34 in Taguig City — so N is now expressible as a fraction of a known denominator rather than left TBD.
 - DOE ingestion job succeeds (no manual intervention) on ≥ 90% of scheduled runs over a month.
 - Median time from app open to successful price submission < 15 seconds.
 - Spam/rejected submission rate stays low enough that manual moderation is not required in V1 (no hard target yet — monitor and revisit).
@@ -129,7 +151,10 @@ Row-Level Security notes: since there is no auth, RLS policies key off the clien
 - **DOE PDF parsing is brittle** — table layout, brand columns, or file format could change without notice; ingestion failures need to degrade gracefully (§7.4/FR-18) and ideally alert the maintainer (e.g., a simple log/webhook), not fail silently forever.
 - **Rate-limit thresholds (6h/station, 10/day) are starting guesses** — should be configurable and tuned after observing real usage/spam patterns.
 - **Monetization is undecided** (per your answer) — flagged here as an explicit open question rather than assumed; revisit post-V1 once there's real usage data.
-- **Station seed data for Malvar** needs to be gathered (names, brands, coordinates) since DOE doesn't provide it — assumed to be a manual/one-time data-entry task before launch, not something the app itself does in V1.
+- **OpenStreetMap is an external dependency with licence obligations.** Station data comes from OSM via the Overpass API, under the **Open Data Commons Open Database License (ODbL) v1.0**, published by the OpenStreetMap Foundation (read 2026-08-31). Two obligations follow. *Attribution:* any surface displaying this data must credit **© OpenStreetMap contributors** — this is a client obligation but it originates in the data layer, so it is carried with the station data rather than left to the client to remember. *Share-alike:* a table built by extracting OSM records is a Derivative Database, and publicly using one obliges us to offer it under ODbL; our own data alongside it (observed prices, DOE figures, localities) is a Collective Database and carries no such obligation — but only while the two stay distinguishable at the row level, which is why provider-derived fields are marked and carry a fetch timestamp.
+- **Overpass is a free, volunteer-run service with a usage policy**, not an SLA. Imports must be deliberate server-side operations, never triggered per page view; there must be no path from a client request to a provider query. During verification the public endpoint returned *"the server is probably too busy to handle your request"* on several attempts and one mirror was unreachable entirely, so the import must retry with backoff and must not treat a failed run as an empty registry.
+- **OSM coverage is contributor-driven and therefore unguaranteed.** The registry is explicitly **not exhaustive**: a station that exists may simply not be mapped, and 36 of the 96 stations found across the covered localities carry no name that resolves to a registered brand. The station-suggestion flow (FR-20) is the eventual answer to gaps, not a defect in the import.
+- **The registry goes stale if the provider is not re-consulted.** Stations open, close, and rebrand on their own schedule, and nothing in the data signals that. This change establishes the registry and how stations enter it; scheduling a refresh is a separate concern, and until one exists the registry reflects the day it was imported. The provider's place identifier is what makes a later reconciliation possible — a closed station is identifiable by id, whereas one identified by name and position is not, since both can change while the station stays open.
 
 ## 14. Future Considerations (Post-V1, not required now)
 

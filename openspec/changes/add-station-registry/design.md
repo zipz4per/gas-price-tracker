@@ -42,11 +42,53 @@ It was chosen over Google Places on two grounds beyond price. Places caps how lo
 
 What it costs instead is a coverage guarantee. OSM is contributor-mapped, so a station that exists may simply not be in it, and 54 of the 153 carry no usable brand tag. There is no SLA and no support channel. The registry is therefore explicitly not exhaustive — which the design already assumed, and which the station-suggestion flow in the PRD (FR-20) is the eventual answer to.
 
+### A locality is identified by OSM relation id, never by name
+
+**Found while verifying the query, 2026-08-31.** Selecting an area by name is
+wrong in two ways at once, and both fail quietly.
+
+There is no boundary named "Lipa City". OSM calls it `Lipa`, so the obvious
+query returns an empty result for a locality with 52 stations — which reads as
+"no stations mapped here" rather than as a lookup failure.
+
+And `Lipa` is not unique. A boundary search returns roughly twenty relations of
+that name, in Poland, Slovenia, Estonia and the Philippines among others. An
+area query by name would union them and import Polish fuel stations into a
+Batangas locality, with plausible-looking rows and coordinates that only a
+bounds check would catch.
+
+So each locality stores the OSM relation id of its administrative boundary, and
+the import queries `area(3600000000 + <relation id>)`. This is the same shape as
+the DOE proxy mapping: a configuration value, not logic, so adding a locality is
+a data change.
+
+```
+  Malvar        rel/5947753    admin_level=6
+  Lipa City     rel/6209763    admin_level=6   named "Lipa" in OSM, not "Lipa City"
+  Taguig City   rel/184776     admin_level=6   named "Taguig" in OSM
+```
+
+The OSM name is recorded beside the id precisely because it differs from ours.
+
+### The place identifier is `type/id`, not `id`
+
+OSM ids are unique only within an element type: `node/3743613230` and
+`way/3743613230` are different objects and both may exist. The unique constraint
+is therefore on the pair, stored as a single `provider_place_id` of the form
+`way/338076890`, which is also how OSM itself addresses an element.
+
+This matters because the registry contains all three types — Taguig alone
+returns 5 nodes, 26 ways and 3 relations — so a bare integer key would collide
+across types eventually rather than immediately, which is the worst schedule for
+a bug like this.
+
 ### ODbL makes the station table share-alike, so it stays separable from our own data
 
 OSM data is licensed under the Open Database Licence. Two obligations follow.
 
-Attribution: any surface showing this data credits **© OpenStreetMap contributors**. That is a client obligation, but it originates here, so it is recorded here.
+Attribution: any surface showing this data credits **© OpenStreetMap contributors** — that exact string, which is the form OSM's own copyright page gives. It is a client obligation, but it originates here, so the read path returns it alongside the stations (task 5.7) rather than leaving the client to remember it. A consumer that has to add attribution by hand is a consumer that will eventually ship without it.
+
+Verified 2026-08-31: the licence is the **Open Data Commons Open Database License (ODbL) v1.0**, held by the OpenStreetMap Foundation. Every Overpass response carries the obligation in its own payload — `osm3s.copyright` reads *"The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."* — so the import has no way to receive the data without also receiving the terms.
 
 Share-alike: a table built by extracting OSM records is a Derivative Database, and publicly using one obliges us to offer it under ODbL. Our own data — observed prices, DOE reference figures, localities — sitting alongside it is a Collective Database, which carries no such obligation. The line holds only if the two stay distinguishable at the row level.
 
@@ -58,11 +100,47 @@ Overpass returns only the element types the query names. `node[amenity=fuel]` ac
 
 The import therefore queries `nwr` and takes `out center` so ways and relations yield a point. This is recorded because the failure is invisible: 21 stations is a believable number for a corridor, and nothing about the response says it is missing the other 172.
 
+Confirmed independently on Malvar alone, 2026-08-31:
+
+```
+  node["amenity"="fuel"]   ->   2 elements
+  nwr["amenity"="fuel"]    ->  10 elements   (2 nodes, 8 ways)
+```
+
+Two of ten. "Two petrol stations in Malvar" is exactly the kind of number a
+reviewer accepts, and the response gives no hint that eight are missing.
+`out center` supplies `center.lat`/`center.lon` for ways and relations, so the
+import reads one shape regardless of element type.
+
+The response carries what the schema needs, and not always:
+
+```
+  node/3743613230   name='Total'                    brand=None   addr: none
+  node/12704871369  name='Felimon Magpantay'        brand=None   addr:street, town, postcode
+  way/338076890     name='Malvar Shell Gas Station' brand='Shell' addr:street, town, postcode
+```
+
+Name is near-universal (92 of 96), `brand` is present on 69 of 96, and address
+tags are sporadic. `Felimon Magpantay` is the review-list case arriving on the
+very first locality — a real station with a personal name and no brand signal,
+which is neither guessable nor droppable.
+
 ### Import runs server-side and off the request path
 
 Overpass needs no API key, so there is no secret to leak — but the reason for keeping the provider call server-side survives the change of provider. Overpass is a free volunteer service with a usage policy that rules out per-page-view querying, and an import triggered by app traffic would be both a bad citizen and a dependency on someone else's uptime for a screen that should render from our own table.
 
 Import is therefore a deliberate operation writing to `stations`; the client reads only our database and never contacts the provider.
+
+The verification run made that concrete. Across roughly a dozen queries on
+2026-08-31 the public endpoint returned *"runtime error … Dispatcher_Client::request_read_and_idx::timeout.
+The server is probably too busy to handle your request"* several times, and the
+`overpass.kumi.systems` mirror was unreachable altogether (no response in 90s).
+Every failure arrived as an **HTTP 200 carrying an HTML error page**, not as a
+non-200 status — so a client that checks the status code and parses the body as
+JSON sees a parse error, and a client that catches that broadly sees an empty
+result. An import that treated either as "no stations here" would silently empty
+a locality. The import must therefore retry with backoff, and must distinguish a
+provider failure from a genuinely empty area before writing anything.
 
 ### Brand resolution is rule-based, and unmatched names are surfaced
 
@@ -104,6 +182,37 @@ DOE prices only the brands it happened to monitor, so filtering the registry to 
   ──────────────────────────────────────────────────────────────────────
   TOTAL          153          62                 37               54
 ```
+
+> **Re-measured 2026-08-31, and two of the three counts do not reproduce.**
+> Method, now recorded so it can be repeated: `nwr["amenity"="fuel"]` inside
+> `area(3600000000 + <relation id>)`, `out center tags`, against
+> `overpass-api.de`.
+>
+> ```
+>   locality      stations   named   brand tag   resolved   review
+>   Malvar              10      10           5          5        5
+>   Lipa City           52      48          39         32       20
+>   Taguig City         34      34          25         23       11
+>   ─────────────────────────────────────────────────────────────
+>   TOTAL               96      92          69         60       36
+> ```
+>
+> Lipa City matches the survey exactly at 52, which is what makes the other two
+> worth taking seriously rather than dismissing as method drift — the same query
+> reproduces one number precisely and misses the others by 4 and 53. A wider
+> bounding box over Taguig returns 342, so 87 is not a bbox either; the original
+> survey's area definition was not recorded and cannot now be reconstructed.
+>
+> The measured figures are the ones to plan against, because they are the ones
+> with a method attached. The DOE-priced split is left as surveyed: recomputing
+> it needs the `brands` and `doe_reference_prices` tables, and the local stack is
+> not available at the time of writing. The argument the table exists to support
+> is unaffected and slightly strengthened — filtering the registry to brands DOE
+> prices still removes stations that plainly exist, and 36 of 96 names still
+> resolve to nothing.
+>
+> Task 6.5's expected counts are updated to match, so the import's own check
+> fires on a real shortfall rather than on a number nobody can reproduce.
 
 A Lipa City map without a Shell on it does not read as a scoped V1; it reads as broken. And the driver standing at that Shell is not helped by being told it does not exist.
 
