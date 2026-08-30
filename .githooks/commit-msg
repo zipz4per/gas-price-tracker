@@ -17,6 +17,10 @@ importing the board client to reuse one regex would turn each of those into a
 failure to commit. The archive-date rule below is duplicated from
 ARCHIVE_DATE_RE in scripts/sync-project-board.py and must stay in step with it.
 
+It also removes the harness-emitted Claude-Session: trailer, which is not this
+project's convention and does not belong in a public log. See
+docs/commit-conventions.md.
+
 Install:  git config core.hooksPath .githooks
 """
 
@@ -98,6 +102,37 @@ def message_body(path: Path) -> str:
     raw = raw.split(SCISSORS)[0]
     lines = [ln for ln in raw.splitlines() if not ln.startswith("#")]
     return "\n".join(lines).strip()
+
+
+STRIPPED_TRAILER = "Claude-Session:"
+
+
+def strip_session_trailer(path: Path) -> bool:
+    """Remove any Claude-Session: line from the message. True if one was there.
+
+    Not this project's convention: it is emitted by the assistant's harness, it
+    names a claude.ai web session that resolves only for the repository owner,
+    and it is not even the identifier `claude --resume` accepts — that is the
+    local transcript UUID. On a public repository it is an opaque link in an
+    otherwise deliberate commit format.
+
+    Stripped rather than rejected. The instruction that emits it renews every
+    session and the author cannot see or disable it, so rejecting would make the
+    first commit of every session an error whose obvious workaround is
+    --no-verify — which also disables the Refs: check this hook exists for.
+
+    Operates on the raw file so comments and the verbose diff survive, and only
+    above the scissors, where a matching line would be diff content rather than
+    a trailer.
+    """
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    head, sep, tail = raw.partition(SCISSORS)
+    kept = [ln for ln in head.splitlines(keepends=True)
+            if not ln.startswith(STRIPPED_TRAILER)]
+    if len(kept) == len(head.splitlines()):
+        return False
+    path.write_text("".join(kept) + sep + tail, encoding="utf-8")
+    return True
 
 
 def record_list(records: dict[str, str]) -> list[str]:
@@ -183,6 +218,10 @@ def main() -> None:
                 f"  #{number} is titled: {title}",
                 f"  expected:           {expected}",
             )
+
+    # Last, so a rejected message is left exactly as the author wrote it and
+    # their editor reopens on their own text rather than on a quietly edited one.
+    strip_session_trailer(Path(sys.argv[1]))
 
 
 if __name__ == "__main__":

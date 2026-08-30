@@ -47,6 +47,43 @@ Refs: add-locality-registry #4
 
 Both issues get the event.
 
+## The whole trailer block
+
+Two trailers reach history, and a third is removed before they do.
+
+```
+Refs: add-station-registry #9                              this project's convention
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>      GitHub renders it
+```
+
+```
+Claude-Session: https://claude.ai/code/session_…           stripped by the hook
+```
+
+`Claude-Session:` is emitted by the assistant's harness, not chosen here. It
+names a claude.ai web session that resolves only for the repository owner, and
+it is not even the identifier that resumes anything — `claude --resume` takes the
+local transcript UUID, which the trailer never carried. On a public repository it
+was an opaque link in an otherwise deliberate format.
+
+The hook removes it rather than rejecting it. The instruction that emits it
+renews every session and the author cannot see or disable it, so rejecting would
+make the first commit of every session an error whose obvious workaround is
+`--no-verify` — which also disables the `Refs:` check the hook exists for.
+
+**Eighteen commits already carry it**, from before this rule. History was not
+rewritten: `8f2488e` is the root, so annotating anything moves all thirty-six
+shas, and this repository cites its own shas in thirteen places plus this file.
+
+To find a session again, none of this is needed — `claude --resume` indexes them
+per directory:
+
+```bash
+claude --continue                    # most recent in this directory
+claude --resume                      # picker
+claude --resume <transcript-uuid>    # a specific one
+```
+
 ## Order of operations
 
 A record's issue must exist before its first commit, because the trailer needs

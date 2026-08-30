@@ -1,0 +1,8 @@
+schema: spec-driven
+created: 2026-08-30
+
+layer: tooling
+
+# Which trailers a commit message carries is a fact about how this repository
+# keeps its own history, not behaviour it promises to anyone.
+skip_specs: true
