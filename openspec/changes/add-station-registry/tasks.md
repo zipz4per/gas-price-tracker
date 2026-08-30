@@ -17,12 +17,12 @@
 
 ## 3. Station registry schema
 
-- [ ] 3.1 Create the stations table with a surrogate key, the provider place identifier, name, brand, locality, and address, and verify a station cannot be recorded against an unregistered locality or an unregistered brand
-- [ ] 3.2 Enforce uniqueness on the provider place identifier, and verify importing the same place twice matches the existing station instead of creating a second one
-- [ ] 3.3 Record when provider-supplied fields were last fetched, so cached data is distinguishable from durable data; verify every station carries a fetch timestamp
-- [ ] 3.4 Require coordinates and reject any outside Philippine bounds; verify a transposed latitude and longitude pair is rejected rather than stored
-- [ ] 3.5 Verify a station recorded with coordinates and an address is returned with both, so a client can place it on a map
-- [ ] 3.6 Mark which station fields are provider-derived, and verify the distinction is determinable from the record rather than from knowledge of the import
+- [x] 3.1 Create the stations table with a surrogate key, the provider place identifier, name, brand, locality, and address, and verify a station cannot be recorded against an unregistered locality or an unregistered brand
+- [x] 3.2 Enforce uniqueness on the provider place identifier, and verify importing the same place twice matches the existing station instead of creating a second one
+- [x] 3.3 Record when provider-supplied fields were last fetched, so cached data is distinguishable from durable data; verify every station carries a fetch timestamp
+- [x] 3.4 Require coordinates and reject any outside Philippine bounds; verify a transposed latitude and longitude pair is rejected rather than stored
+- [x] 3.5 Verify a station recorded with coordinates and an address is returned with both, so a client can place it on a map
+- [x] 3.6 Mark which station fields are provider-derived, and verify the distinction is determinable from the record rather than from knowledge of the import
 
 ## 4. Brand resolution
 
