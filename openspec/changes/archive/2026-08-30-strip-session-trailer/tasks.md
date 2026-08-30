@@ -16,9 +16,9 @@
 
 ## 2. End to end
 
-- [ ] 2.1 Make a real commit whose message contains the trailer, and verify the
+- [x] 2.1 Make a real commit whose message contains the trailer, and verify the
       commit on `main` does not.
-- [ ] 2.2 Verify that commit shows exactly two trailers.
+- [x] 2.2 Verify that commit shows exactly two trailers.
 
 ## 3. Documentation and close-out
 
