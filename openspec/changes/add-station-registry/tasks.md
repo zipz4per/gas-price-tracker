@@ -32,13 +32,13 @@
 
 ## 5. Station read path
 
-- [ ] 5.1 Return the stations in a locality together with the DOE reference range for each station's brand and fuel type, and verify the reporting period accompanies every result
-- [ ] 5.2 Label the figure as a locality-wide brand range in the result itself, and verify a consumer cannot obtain the range without the label that says what it is
-- [ ] 5.3 Carry proxy attribution through to stations, and verify a Malvar station names Tanauan City as the source while Lipa City and Taguig City stations carry no attribution
-- [ ] 5.4 Return a station with an explicit no-reference-data marker when its brand has no DOE figures for the requested fuel type, and verify the station is still returned rather than omitted
-- [ ] 5.5 Verify a registered locality with no stations returns an empty result, distinguishable from an unregistered locality
-- [ ] 5.6 Verify the read path is callable by the anon role and that no insert, update, or delete path is reachable through it
-- [ ] 5.7 Return the source attribution alongside the stations, and verify a consumer cannot obtain station data without it
+- [x] 5.1 Return the stations in a locality together with the DOE reference range for each station's brand and fuel type, and verify the reporting period accompanies every result
+- [x] 5.2 Label the figure as a locality-wide brand range in the result itself, and verify a consumer cannot obtain the range without the label that says what it is
+- [x] 5.3 Carry proxy attribution through to stations, and verify a Malvar station names Tanauan City as the source while Lipa City and Taguig City stations carry no attribution
+- [x] 5.4 Return a station with an explicit no-reference-data marker when its brand has no DOE figures for the requested fuel type, and verify the station is still returned rather than omitted
+- [x] 5.5 Verify a registered locality with no stations returns an empty result, distinguishable from an unregistered locality
+- [x] 5.6 Verify the read path is callable by the anon role and that no insert, update, or delete path is reachable through it. Note: with RLS and no write policy an anon UPDATE/DELETE reports 0 rows rather than raising — no rows are visible to modify. Safe, but a no-op rather than a refusal. Also revoked the default PUBLIC EXECUTE that both read functions carried
+- [x] 5.7 Return the source attribution alongside the stations, and verify a consumer cannot obtain station data without it
 
 ## 6. Import
 
