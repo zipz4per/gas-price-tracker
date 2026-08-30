@@ -204,12 +204,27 @@ DOE prices only the brands it happened to monitor, so filtering the registry to 
 > survey's area definition was not recorded and cannot now be reconstructed.
 >
 > The measured figures are the ones to plan against, because they are the ones
-> with a method attached. The DOE-priced split is left as surveyed: recomputing
-> it needs the `brands` and `doe_reference_prices` tables, and the local stack is
-> not available at the time of writing. The argument the table exists to support
-> is unaffected and slightly strengthened — filtering the registry to brands DOE
-> prices still removes stations that plainly exist, and 36 of 96 names still
-> resolve to nothing.
+> with a method attached.
+>
+> **The split, recomputed against the imported registry** once the stack was
+> available — 96 stations joined to `doe_reference_prices` through each
+> locality's `doe_source_label`:
+>
+> ```
+>   locality       stations   DOE prices brand   DOE silent   unresolved
+>   Malvar               10                  8            2            0
+>   Lipa City            52                 32           16            4
+>   Taguig City          34                 16           17            1
+>   ───────────────────────────────────────────────────────────────────
+>   TOTAL                96                 56           35            5
+> ```
+>
+> The argument the table exists to support survives intact and is if anything
+> sharper at the smaller scale: filtering the registry to brands DOE prices
+> would cut it from 96 stations to 56, removing 40 that plainly exist. And 35
+> stations — better than a third — need the no-reference state on day one, which
+> is within two of the 37 the original survey predicted despite every other
+> number moving.
 >
 > Task 6.5's expected counts are updated to match, so the import's own check
 > fires on a real shortfall rather than on a number nobody can reproduce.
@@ -241,4 +256,27 @@ Additive. New table and read path; no existing table, function, or policy change
 
 ## Open Questions
 
-- How many of the 54 unresolved names are genuinely independent stations. `INDEPENDENT` is a brand DOE prices in Malvar and Lipa City but not in Taguig City, so the answer changes how many stations carry a reference price — but it is a question for the review list in task 4.2, not one that blocks the schema.
+- ~~How many of the 54 unresolved names are genuinely independent stations.~~
+  **Answered 2026-08-31.** Nearly all of them: the unresolved set is dominated by
+  real regional retailers that DOE simply does not monitor — Uno Fuel, Flexfuel,
+  RePhil, Gasso, Petro Gazz, Maxfill, Smartfuels, Equator, Nitro, Global Oil,
+  BM Gas, EcoOil and others. Each now has an explicit rule mapping it to
+  `INDEPENDENT`, one per trade name, so a station reaches that brand because
+  someone recognised the name rather than because nothing else matched.
+
+  That takes the review list from 36 names to **5**, and those five are the
+  genuinely irreducible cases rather than missing rules:
+
+  ```
+    way/798608214    Lipa City     no name tag at all
+    way/1135309652   Lipa City     no name tag at all
+    way/1323985748   Lipa City     no name tag at all
+    way/1499707495   Lipa City     no name tag at all
+    node/6337145236  Taguig City   "Solane Factory"
+  ```
+
+  Four are mapped as `amenity=fuel` with no identifying text whatsoever, so no
+  rule can ever reach them — they are pins with an unknown brand and no
+  reference price, which is exactly the third state the read path exists to
+  express. The fifth is discussed under task 6.4: Solane is an LPG brand, and a
+  "factory" is likely an upstream mis-tag rather than a retail forecourt.

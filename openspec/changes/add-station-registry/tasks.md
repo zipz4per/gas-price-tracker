@@ -26,9 +26,9 @@
 
 ## 4. Brand resolution
 
-- [ ] 4.1 Resolve a provider's free-text station name to a registered brand through maintained rules, and verify names such as "Petron Gas Station" and "Shell Select" resolve to their brands
-- [ ] 4.2 Surface an unresolvable name for review together with the place it came from, and verify it is neither assigned a default brand nor dropped
-- [ ] 4.3 Verify an unbranded station is classified as `INDEPENDENT` only by an explicit rule, and that nothing falls through to it by default
+- [x] 4.1 Resolve a provider's free-text station name to a registered brand through maintained rules, and verify names such as "Petron Gas Station" and "Shell Select" resolve to their brands
+- [x] 4.2 Surface an unresolvable name for review together with the place it came from, and verify it is neither assigned a default brand nor dropped
+- [x] 4.3 Verify an unbranded station is classified as `INDEPENDENT` only by an explicit rule, and that nothing falls through to it by default
 
 ## 5. Station read path
 
@@ -42,11 +42,11 @@
 
 ## 6. Import
 
-- [ ] 6.1 Import stations for Malvar, Lipa City, and Taguig City from the provider, and verify each imported station resolves to a brand or the review list, a locality, and valid coordinates
-- [ ] 6.2 Verify the import is idempotent by running it twice and confirming no duplicate stations and no changed station count
-- [ ] 6.3 Verify a station whose brand DOE does not report is imported normally, confirming DOE plays no part in whether a station exists
+- [x] 6.1 Import stations for Malvar, Lipa City, and Taguig City from the provider, and verify each imported station resolves to a brand or the review list, a locality, and valid coordinates
+- [x] 6.2 Verify the import is idempotent by running it twice and confirming no duplicate stations and no changed station count
+- [x] 6.3 Verify a station whose brand DOE does not report is imported normally, confirming DOE plays no part in whether a station exists
 - [ ] 6.4 Record the review list of unresolved names produced by the import, and resolve each either by adding a rule or by recording why the station is excluded
-- [ ] 6.5 Verify the imported count is of the order measured on 2026-08-31 — 10 in Malvar, 52 in Lipa City, 34 in Taguig City, 96 total — and investigate any locality that comes back materially short rather than accepting a plausible number. These replace the 2026-08-28 survey's 14/52/87, which did not reproduce; see the annotation in `design.md`
+- [x] 6.5 Verify the imported count is of the order measured on 2026-08-31 — 10 in Malvar, 52 in Lipa City, 34 in Taguig City, 96 total — and investigate any locality that comes back materially short rather than accepting a plausible number. These replace the 2026-08-28 survey's 14/52/87, which did not reproduce; see the annotation in `design.md`
 
 ## 7. End-to-end verification
 
