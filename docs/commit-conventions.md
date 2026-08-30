@@ -30,6 +30,14 @@ event pointing back at the commit, which is the link you actually click. The
 name is what still resolves if the board is ever rebuilt and every number shifts,
 and it is what makes `git log` readable offline, where a bare `#14` says nothing.
 
+One thing the trailer does not own: GitHub creates a reference from **any**
+`#N` anywhere in the message, prose included. `2521898` appears on #1 and #13
+as well as on the two its trailers name, because its body discusses them. So an
+issue's list of referenced commits is broader than "the commits that implemented
+this" — it is "the commits that mentioned this". The trailer is what makes the
+first set complete; nothing makes the second set narrow. Write `#N` in prose
+when you mean it.
+
 A commit spanning several records repeats the line:
 
 ```
