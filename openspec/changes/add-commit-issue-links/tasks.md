@@ -131,5 +131,5 @@
 - [x] 8.4 Note in `docs/project-board.md` that backfill comments exist, are not
       managed by the sync, and are lost on a board rebuild.
 - [x] 8.5 `openspec validate --strict` passes for this change.
-- [ ] 8.6 Confirm every commit made while implementing this change carries its
+- [x] 8.6 Confirm every commit made while implementing this change carries its
       own trailer.
