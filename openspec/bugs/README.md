@@ -65,6 +65,30 @@ from the capabilities its `specs/` directory writes deltas for; a bug has no
 must name a directory under `openspec/specs/`, and one that does not aborts the
 sync.
 
+A bug's issue carries its dependencies too, both derived from the report:
+
+```
+  Fixed by names a change   ->  the bug's issue is BLOCKED BY that change's
+                                issue. The bug cannot close until the change
+                                archives, and now the board says so.
+
+  Fixed by names a commit   ->  no edge. The work is already in the tree and
+                                there is no record still to archive.
+
+  Caused by resolves        ->  a CROSS-REFERENCE in the body, not an edge.
+```
+
+Causation is not a dependency, which is why it is only a reference. The change
+that caused a bug is finished; marking it as *blocking* would put an obligation
+on a card nobody can act on, and the Done column would stop meaning finished.
+GitHub has no `relates to` in its API, so a link in the body is the honest
+representation — it still shows on the causing issue's timeline.
+
+A bug never declares `blocked_by:` in its `.openspec.yaml`; a declaration is
+rejected the way a declared `kind:` is. Its blocker is read from `## Fixed by`,
+the same line `/opsx:archive-bug` reads to decide whether the bug may close, so
+the board and the gate cannot disagree.
+
 A bug's lifecycle maps onto the board's existing status column:
 
 ```

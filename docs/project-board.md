@@ -280,6 +280,64 @@ the issues that carried it, but the label itself is left in the repository,
 unused. Deleting a label removes it from every issue that ever carried it,
 which is destructive enough to be a person's decision rather than a sync's.
 
+## Dependencies
+
+An issue's **blocked by** edges are derived the same way everything else is,
+and from two different places depending on the record.
+
+```
+  a bug      derived   from its report's `## Fixed by`, when that names a
+                       change rather than a commit
+  a change   declared  in .openspec.yaml, as blocked_by: [<change-name>, …]
+```
+
+That asymmetry is deliberate. A bug's report already names the change that
+fixes it, and `/opsx:archive-bug` already reads that same line to decide whether
+the bug may close — deriving the edge means the board and the gate cannot
+disagree. A change has no equivalent sentence; its proposal names capabilities,
+not other changes. So it says what it waits on outright, and a bug declaring
+`blocked_by:` is rejected the way a declared `kind:` is.
+
+A declared name must resolve to a change directory, active or archived, and one
+that does not stops the run. A change that names itself, or a set of changes
+that form a loop, stops it too — the repository is where that mistake is, and
+GitHub would otherwise reject one edge and leave the rest written.
+
+**Edges are reconciled, exactly like labels.**
+
+```
+  between two board issues  ─  added and removed every run
+  to any other issue        ─  never touched
+```
+
+An edge the repository does not state is removed, or a hand-drawn one would
+become a second source of truth the projection cannot see. An edge pointing at
+an issue this board did not create was drawn by a person about something
+outside this workflow, and is left alone for the same reason an unmanaged label
+is.
+
+**A closed blocker stays written.** `[bug] doe-fuel-type-not-recognised` is
+blocked by `[change] fix-unrecognised-read-inputs`, which is archived and
+closed. The edge is the record of why the bug waited; GitHub renders a closed
+blocker as satisfied rather than as an open constraint, so there is nothing to
+clean up.
+
+**Causation is a reference, not an edge.** A bug's `## Caused by` names a
+commit, and the sync resolves that commit to the change that carries it — but
+only when the commit touched exactly one change directory, since most touch
+none and the repository's first commit touched three. A resolved cause is
+published in the body as `add-doe-price-retrieval #1`, which GitHub links and
+records on the causing issue's timeline.
+
+It is not marked as *blocking*. The causing change is finished and cannot
+discharge an obligation, so a blocking edge would show a live constraint nobody
+can act on, and Done would stop meaning finished. GitHub's API has no
+`relates to`, so a body reference is the accurate representation available.
+
+Edges are written after every issue exists, so one can never name a card that
+has not been created yet. This costs nothing on an established board and means
+a first run on an empty one still ends correct.
+
 ## When something looks wrong
 
 | Symptom | Cause | Fix |
@@ -287,11 +345,15 @@ which is destructive enough to be a person's decision rather than a sync's.
 | A card didn't move | The sync hasn't run since the change did | Run the sync |
 | Duplicate cards for one change | The change was renamed; issues match by title | Close the orphaned issue and delete its card |
 | `gh project list` scope error | Token lost `project` scope | `gh auth refresh -s project` |
-| `N problem(s) in openspec/` | A record has no valid `layer:`, a bug's `capability:` names no spec directory, a `kind:` is declared, or a proposal or report can't supply a description | Fix what the error names; the sync wrote nothing |
+| `N problem(s) in openspec/` | A record has no valid `layer:`, a bug's `capability:` names no spec directory, a `kind:` or a bug's `blocked_by:` is declared, a `blocked_by:` names no change or forms a cycle, or a proposal or report can't supply a description | Fix what the error names; the sync wrote nothing |
+| An edge you drew by hand vanished | Edges between board issues are reconciled from `openspec/` | Declare it in `.openspec.yaml`, or accept that the repository doesn't state it |
 | A card is missing entirely | Its issue was deleted | Just run the sync; it recreates from scratch |
 
 Nothing here needs repair by hand beyond deleting orphans — the sync stores no
-state, so there is no bookkeeping to get out of step.
+state, so there is no bookkeeping to get out of step. That still holds now that
+edges are part of what a run produces: they are recomputed from `openspec/` and
+matched through issue titles, so a deleted issue is recreated and its edges are
+redrawn with it, new number and all.
 
 ## Not automated
 

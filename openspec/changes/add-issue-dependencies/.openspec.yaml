@@ -1,0 +1,8 @@
+schema: spec-driven
+created: 2026-08-30
+layer: tooling
+
+# A dependency edge between two issues is a fact about the repository's own
+# records, not behaviour the project promises to anyone. This change teaches the
+# board to draw edges it can already derive; it changes no capability.
+skip_specs: true

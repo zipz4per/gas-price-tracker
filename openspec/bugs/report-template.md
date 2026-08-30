@@ -54,7 +54,22 @@ _Not yet investigated._
 
 These carry different lessons, which is why the field is not a free-text
 blank. `git log -S` and `git log -- <path>` find the commit in one command now
-and are expensive to reconstruct in a year.>
+and are expensive to reconstruct in a year.
+
+The board resolves the sha to the change that carries it and publishes the
+issue beside it, so the line above becomes:
+
+  `1a3f1e9  Add DOE reference price retrieval function`  (never worked)
+      — add-doe-price-retrieval #1
+
+Resolution is automatic and needs nothing here. It is deliberately timid: it
+takes a match only when the commit touched exactly one change directory, so a
+commit touching none — most of them — or several resolves to nothing and the
+line prints unchanged. Naming the change yourself overrides that, which is the
+way to link a cause the commit itself cannot point at.
+
+This is a reference, not a dependency. The causing change is finished; it is
+not blocking the bug and is not marked as doing so.>
 
 ## Fixed by
 

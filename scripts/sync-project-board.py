@@ -143,6 +143,19 @@ def gh(*args: str, check: bool = True) -> str:
     return result.stdout.strip()
 
 
+def git(*args: str) -> str:
+    """Run a git command and return stdout, or "" when it fails.
+
+    Unlike gh(), a failure here is not fatal. Every caller is resolving a
+    commit reference found in a report, and a sha that no longer resolves —
+    a rebase, a shallow clone, a typo — must degrade to "no link" rather than
+    stopping a sync over a decoration."""
+    result = subprocess.run(
+        ["git", *args], capture_output=True, text=True, cwd=REPO_ROOT
+    )
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
 @dataclass
 class Record:
     """A change or a bug — everything the board projects.
@@ -160,6 +173,7 @@ class Record:
     capabilities: tuple[str, ...] = ()
     skip_specs: bool = False
     layer: str = ""
+    blocked_by: tuple[str, ...] = ()
 
     @property
     def status(self) -> str:
@@ -258,6 +272,106 @@ def read_declared_capability(bug_dir: Path) -> tuple[str, ...]:
     return (declared,) if declared else ()
 
 
+def _declared_list(record_dir: Path, field: str) -> tuple[str, ...]:
+    """A list field from .openspec.yaml, in either form YAML allows:
+
+        blocked_by:                      blocked_by: [add-a, add-b]
+          - add-a
+          - add-b
+
+    Same reasoning as _declared(): the sync reads a handful of flat fields,
+    and a real parser would be a larger dependency than the problem."""
+    cfg = record_dir / ".openspec.yaml"
+    if not cfg.is_file():
+        return ()
+    text = cfg.read_text(encoding="utf-8")
+
+    inline = re.search(rf"(?m)^{field}:[ \t]*\[(.*?)\]", text)
+    if inline:
+        return tuple(v.strip().strip("'\"") for v in inline.group(1).split(",")
+                     if v.strip())
+
+    block = re.search(rf"(?m)^{field}:[ \t]*$\n((?:[ \t]+-[ \t]*\S+[ \t]*\n?)+)",
+                      text)
+    if block:
+        return tuple(m.group(1) for m in
+                     re.finditer(r"(?m)^[ \t]+-[ \t]*(\S+)[ \t]*$", block.group(1)))
+
+    scalar = _declared(record_dir, field)
+    return (scalar,) if scalar else ()
+
+
+def read_declared_blocked_by(record_dir: Path) -> tuple[str, ...]:
+    """What a change says it waits on.
+
+    Declared, where a bug's blocker is derived: a bug's report already names
+    the change that fixes it, and the archive workflow already reads that same
+    line to decide whether the bug may close. A change has no equivalent
+    sentence — its proposal names capabilities, not other changes — so there is
+    nothing to derive from and it says so outright."""
+    return _declared_list(record_dir, "blocked_by")
+
+
+SHA_RE = re.compile(r"\b([0-9a-f]{7,40})\b")
+
+
+def change_for_commit(sha: str) -> str:
+    """The change a commit belongs to, or "" when that is not unambiguous.
+
+    Implementation commits tick their own tasks.md, so the change directory a
+    commit touched usually identifies it. Usually is not always: across this
+    repository most commits touch no change directory at all, and the one that
+    scaffolded the project touched three. So a unique match resolves and
+    everything else resolves to nothing — an absent link is recoverable from
+    the sha printed beside it, and a wrong one is not.
+
+    --name-only rather than --stat: --stat abbreviates long paths with an
+    ellipsis, and these paths are long."""
+    out = git("show", "--name-only", "--format=", sha)
+    if not out:
+        return ""
+    names = {
+        ARCHIVE_DATE_RE.sub("", m.group(1))
+        for m in re.finditer(r"^openspec/changes/(?:archive/)?([^/]+)/", out, re.M)
+        if m.group(1) != "archive"
+    }
+    return names.pop() if len(names) == 1 else ""
+
+
+def named_change(line: str, known: frozenset[str]) -> str:
+    """The one known change name written in a line, or "" if none or several.
+
+    Matching against the set of real change names rather than a shape is what
+    keeps this from guessing: a name is recognised because a directory of that
+    name exists, not because it looks like one. Boundaries are checked so
+    `add-doe-price-storage` cannot be found inside a longer name."""
+    hits = {n for n in known
+            if re.search(rf"(?<![a-z0-9-]){re.escape(n)}(?![a-z0-9-])", line)}
+    return hits.pop() if len(hits) == 1 else ""
+
+
+def resolve_blocker(fixed_by: str, known: frozenset[str]) -> str:
+    """The change named in a bug's `Fixed by`, or "" when it names a commit.
+
+    A bug fixed by a commit has no blocker: the work is already in the tree,
+    and there is no record still to archive."""
+    return named_change(fixed_by, known)
+
+
+def resolve_cause(caused_by: str, known: frozenset[str]) -> str:
+    """The change a bug's `Caused by` points at, or "" when it points nowhere.
+
+    An explicitly written change name wins, so an author can state a link the
+    commit itself cannot supply. Otherwise the leading sha is resolved, and
+    `spec was silent` — which carries no sha at all — resolves to nothing, as
+    it should: nothing caused it."""
+    explicit = named_change(caused_by, known)
+    if explicit:
+        return explicit
+    found = SHA_RE.search(caused_by)
+    return change_for_commit(found.group(1)) if found else ""
+
+
 def discover_records() -> list[Record]:
     """Both trees, active and archived."""
     records: list[Record] = []
@@ -270,7 +384,8 @@ def discover_records() -> list[Record]:
         caps = (read_capabilities(d) if kind == FEATURE
                 else read_declared_capability(d))
         records.append(Record(name, d, kind, archived, done, total,
-                              caps, reads_skip_specs(d), read_layer(d)))
+                              caps, reads_skip_specs(d), read_layer(d),
+                              read_declared_blocked_by(d)))
 
     for root, kind, archive in (
         (CHANGES_DIR, FEATURE, ARCHIVE_DIR),
@@ -502,7 +617,7 @@ def _extract_report(record: Record) -> BugReport:
     return report
 
 
-def check_declarations(record: Record) -> list[str]:
+def check_declarations(record: Record, known: frozenset[str]) -> list[str]:
     """Validate what a record declares, returning problems rather than
     raising, so one pass can report everything that needs attention.
 
@@ -543,6 +658,52 @@ def check_declarations(record: Record) -> list[str]:
                 f"{record.name}: no 'capability:' declared; a bug has no "
                 f"specs/ directory to derive one from ({where})")
 
+        # A bug's blocker is read from its report's `Fixed by`, which the
+        # archive workflow already reads to decide whether the bug may close.
+        # Declaring one here would be a second place to state the same fact,
+        # free to disagree with the first.
+        if record.blocked_by:
+            problems.append(
+                f"{record.name}: 'blocked_by:' is declared but a bug's blocker "
+                f"is derived from its report's '## Fixed by'; remove it "
+                f"({where})")
+
+    for blocker in record.blocked_by:
+        if blocker == record.name:
+            problems.append(
+                f"{record.name}: declares itself in 'blocked_by:' ({where})")
+        elif blocker not in known:
+            problems.append(
+                f"{record.name}: 'blocked_by:' names {blocker!r}, which is no "
+                f"change under {_where(CHANGES_DIR)}/ ({where})")
+
+    return problems
+
+
+def check_cycles(records: list[Record]) -> list[str]:
+    """Declared dependencies that form a loop.
+
+    Caught here rather than at the API, because the repository is where the
+    mistake is: GitHub would reject one edge of the cycle and leave the rest
+    written, which is a half-applied projection and worse than a stopped run."""
+    edges = {r.name: [b for b in r.blocked_by] for r in records
+             if r.kind == FEATURE}
+    problems: list[str] = []
+    seen: set[str] = set()
+
+    def walk(name: str, trail: list[str]) -> None:
+        if name in trail:
+            loop = trail[trail.index(name):] + [name]
+            problems.append("blocked_by: forms a cycle: " + " -> ".join(loop))
+            return
+        if name in seen:
+            return
+        seen.add(name)
+        for nxt in edges.get(name, ()):
+            walk(nxt, trail + [name])
+
+    for name in sorted(edges):
+        walk(name, [])
     return problems
 
 
@@ -570,9 +731,10 @@ def artifact_links(record: Record) -> list[tuple[str, str]]:
     return links
 
 
-def build_issue_body(record: Record, desc: Description | BugReport) -> str:
+def build_issue_body(record: Record, desc: Description | BugReport,
+                     cause_ref: str = "") -> str:
     if isinstance(desc, BugReport):
-        return build_bug_body(record, desc)
+        return build_bug_body(record, desc, cause_ref)
     return build_change_body(record, desc)
 
 
@@ -616,7 +778,8 @@ def build_change_body(record: Record, desc: Description) -> str:
     return "\n".join(lines) + "\n"
 
 
-def build_bug_body(record: Record, report: BugReport) -> str:
+def build_bug_body(record: Record, report: BugReport,
+                   cause_ref: str = "") -> str:
     """Compose the issue body from the report.
 
     Same shape as a change's: the description leads, status stays high, links
@@ -632,7 +795,8 @@ def build_bug_body(record: Record, report: BugReport) -> str:
         "",
         f"**Status:** {record.status} · **Tasks:** {record.progress}",
         "",
-        f"**Caused by:** {report.caused_by} · **Fixed by:** {report.fixed_by}",
+        f"**Caused by:** {report.caused_by}{cause_ref} · "
+        f"**Fixed by:** {report.fixed_by}",
         "",
         "**Reproduction**",
         "",
@@ -667,6 +831,87 @@ def find_issue(title: str) -> dict | None:
         if issue["title"] == title:
             return issue
     return None
+
+
+def all_issues() -> dict[str, dict]:
+    """Every issue, keyed by title, fetched once per run.
+
+    find_issue() re-listed the whole repository for each record, which was one
+    round trip per card. Nothing else changes: matching is still by title and
+    no id is stored, so a deleted issue is recreated rather than dangling."""
+    raw = gh(
+        "issue", "list", "--repo", REPO, "--state", "all",
+        "--limit", "200", "--json", "number,title,state,body,url,assignees,labels",
+    )
+    return {issue["title"]: issue for issue in json.loads(raw or "[]")}
+
+
+def issue_ids() -> dict[int, int]:
+    """Issue number -> REST database id.
+
+    The dependencies API identifies a blocker by database id, not by number.
+    `gh issue list --json id` returns the GraphQL node id instead, which is a
+    third identifier again, so this goes to the REST endpoint for it. Passing a
+    number where an id belongs answers 404 rather than pointing somewhere else,
+    which is the one mercy in having three kinds of identifier."""
+    out = gh("api", "--paginate", f"repos/{REPO}/issues?state=all&per_page=100",
+             "--jq", '.[] | select(.pull_request | not) | "\(.number) \(.id)"')
+    ids: dict[int, int] = {}
+    for line in out.splitlines():
+        number, _, database_id = line.partition(" ")
+        if number and database_id:
+            ids[int(number)] = int(database_id)
+    return ids
+
+
+def blockers_on(number: int) -> list[int]:
+    """The issue numbers GitHub currently records as blocking this one."""
+    out = gh("api", f"repos/{REPO}/issues/{number}/dependencies/blocked_by",
+             "--jq", ".[].number", check=False)
+    return [int(n) for n in out.splitlines() if n.strip()]
+
+
+def add_blocker(number: int, blocker_id: int) -> None:
+    """Write one edge. GitHub derives the inverse, so the blocker shows
+    `blocking` without a second call."""
+    gh("api", "-X", "POST",
+       f"repos/{REPO}/issues/{number}/dependencies/blocked_by",
+       "-F", f"issue_id={blocker_id}")
+
+
+def remove_blocker(number: int, blocker_id: int) -> None:
+    gh("api", "-X", "DELETE",
+       f"repos/{REPO}/issues/{number}/dependencies/blocked_by/{blocker_id}")
+
+
+def dependency_actions(
+    record: Record,
+    blockers: dict[str, tuple[str, ...]],
+    numbers: dict[str, int],
+    board_numbers: set[int],
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """The edges to add and the edges to remove for one record's issue.
+
+    Reconciled rather than merely added, for the reason labels are: an edge
+    drawn by hand on GitHub that the repository does not state would otherwise
+    persist forever and become a second source of truth the projection cannot
+    see.
+
+    The managed set is bounded the same way too. An edge whose blocker is not
+    a board issue was put there by a person about something outside this
+    workflow, and a board that deletes it teaches people not to use the
+    feature. Those are left alone."""
+    number = numbers.get(record.issue_title)
+    if number is None:
+        return (), ()
+    want = {
+        numbers[TITLE_PREFIXES[FEATURE] + name]
+        for name in blockers.get(record.issue_title, ())
+        if TITLE_PREFIXES[FEATURE] + name in numbers
+    }
+    have = set(blockers_on(number))
+    return (tuple(sorted(want - have)),
+            tuple(sorted(n for n in have - want if n in board_numbers)))
 
 
 def project_items() -> dict[str, str]:
@@ -738,6 +983,10 @@ def sync(dry_run: bool) -> int:
     #
     # Keyed by issue title, not by name: a bug and a change may share a name,
     # and the titles are what distinguish them.
+    # Every change name in the tree, active and archived. A dependency on
+    # finished work is the ordinary case, so the archive counts.
+    known_changes = frozenset(r.name for r in records if r.kind == FEATURE)
+
     descriptions: dict[str, Description | BugReport] = {}
     failures: list[str] = []
     for record in records:
@@ -745,7 +994,8 @@ def sync(dry_run: bool) -> int:
             descriptions[record.issue_title] = extract_description(record)
         except DocumentError as exc:
             failures.append(str(exc))
-        failures.extend(check_declarations(record))
+        failures.extend(check_declarations(record, known_changes))
+    failures.extend(check_cycles(records))
     if failures:
         sys.stdout.flush()  # keep the report above the errors, not after them
         for failure in failures:
@@ -754,14 +1004,81 @@ def sync(dry_run: bool) -> int:
               file=sys.stderr)
         return 1
 
+    # Every link is resolved here, once, as a change *name*. Issue numbers are
+    # deliberately not resolved yet: an issue may not exist at this point, and
+    # a name that cannot be resolved to a number later is a missing card rather
+    # than a broken reference.
+    #
+    # A bug derives its blocker from the report the archive workflow already
+    # reads; a change states its own. resolve_blocker() returns only names in
+    # known_changes, and preflight has already rejected any declared name that
+    # is not, so nothing here can name a record that does not exist.
+    blockers: dict[str, tuple[str, ...]] = {}
+    causes: dict[str, str] = {}
+    for record in records:
+        desc = descriptions[record.issue_title]
+        if isinstance(desc, BugReport):
+            fixer = resolve_blocker(desc.fixed_by, known_changes)
+            blockers[record.issue_title] = (fixer,) if fixer else ()
+            causes[record.issue_title] = resolve_cause(desc.caused_by,
+                                                       known_changes)
+        else:
+            blockers[record.issue_title] = record.blocked_by
+
     if not dry_run:
         ensure_labels(records)
     on_board = {} if dry_run else project_items()
+    issues = all_issues()
     actions = 0
 
+    # Every issue exists before any body is written or any edge is drawn, so a
+    # cross-reference and an edge can both name any record's issue regardless
+    # of the order records are visited in. Created with no cross-reference of
+    # its own — the target may still be a few lines away — and the body pass
+    # below fills it in. On an established board this creates nothing.
+    if not dry_run:
+        for record in records:
+            if record.issue_title in issues:
+                continue
+            opening = build_issue_body(record,
+                                       descriptions[record.issue_title])
+            url = gh(
+                "issue", "create", "--repo", REPO,
+                "--title", record.issue_title, "--body", opening,
+                "--assignee", ISSUE_ASSIGNEE,
+                *sum((["--label", l] for l in record.labels), []),
+            ).splitlines()[-1]
+            # The body posted is recorded, not a blank, so the pass below
+            # rewrites it only when a cross-reference actually changed it.
+            issues[record.issue_title] = {
+                "url": url, "number": int(url.rsplit("/", 1)[-1]),
+                "state": "OPEN", "body": opening,
+                "assignees": [{"login": ISSUE_ASSIGNEE}],
+                "labels": [{"name": l} for l in record.labels],
+            }
+            print(f"  {record.issue_title}\n    issue    created {url}")
+            actions += 1
+
+    numbers = {title: int(issue["number"]) for title, issue in issues.items()}
+    # Only issues this board projects are the sync's to draw edges between.
+    board_numbers = {numbers[r.issue_title] for r in records
+                     if r.issue_title in numbers}
+    titles = {n: title for title, n in numbers.items() if n in board_numbers}
+
+    def issue_ref(change_name: str) -> str:
+        """`add-doe-price-retrieval #1`, or "" when there is no such card.
+
+        Causation is published as a cross-reference rather than an edge: the
+        causing change is finished, and a blocking edge would show an
+        obligation nobody can discharge."""
+        number = numbers.get(TITLE_PREFIXES[FEATURE] + change_name)
+        return f"{change_name} #{number}" if number else ""
+
     for record in records:
-        body = build_issue_body(record, descriptions[record.issue_title])
-        issue = find_issue(record.issue_title)
+        cause = issue_ref(causes.get(record.issue_title, ""))
+        body = build_issue_body(record, descriptions[record.issue_title],
+                                f" — {cause}" if cause else "")
+        issue = issues.get(record.issue_title)
         want_state = "CLOSED" if record.archived else "OPEN"
 
         print(f"  {record.issue_title}")
@@ -772,30 +1089,27 @@ def sync(dry_run: bool) -> int:
         if dry_run:
             for label, url in artifact_links(record):
                 print(f"    link     {label}: {url}")
+            if cause:
+                print(f"    cause    {cause}")
+            add, remove = dependency_actions(record, blockers, numbers,
+                                             board_numbers)
+            for n in add:
+                print(f"    blocked  + #{n} {titles.get(n, '')}".rstrip())
+            for n in remove:
+                print(f"    blocked  - #{n} {titles.get(n, '')}".rstrip())
             print(f"    issue    {'update' if issue else 'create'} (dry run)")
             print(f"    board    set {STATUS_FIELD} = {record.status} (dry run)\n")
             continue
 
-        if issue is None:
-            url = gh(
-                "issue", "create", "--repo", REPO,
-                "--title", record.issue_title, "--body", body,
-                "--assignee", ISSUE_ASSIGNEE,
-                *sum((["--label", l] for l in record.labels), []),
-            ).splitlines()[-1]
-            issue = {"url": url, "number": url.rsplit("/", 1)[-1], "state": "OPEN",
-                     "body": body, "assignees": [{"login": ISSUE_ASSIGNEE}],
-                     "labels": [{"name": l} for l in record.labels]}
-            print(f"    issue    created {url}")
+        # The issue is guaranteed to exist: the pass above created any that
+        # did not, so this loop never has to invent one mid-flight.
+        url = issue["url"]
+        if issue.get("body", "").strip() != body.strip():
+            gh("issue", "edit", str(issue["number"]), "--repo", REPO, "--body", body)
+            print(f"    issue    body updated")
             actions += 1
         else:
-            url = issue["url"]
-            if issue.get("body", "").strip() != body.strip():
-                gh("issue", "edit", str(issue["number"]), "--repo", REPO, "--body", body)
-                print(f"    issue    body updated")
-                actions += 1
-            else:
-                print(f"    issue    up to date")
+            print(f"    issue    up to date")
 
         # Labels are reconciled, not merely added. The sync owns exactly
         # three prefixes; a stale one inside them is removed, and every other
@@ -848,6 +1162,28 @@ def sync(dry_run: bool) -> int:
             "--single-select-option-id", status_option_id(record.status),
         )
         print(f"    board    {STATUS_FIELD} = {record.status}\n")
+
+    # Edges last. Every issue exists by now, so an edge can never name a card
+    # that has not been created yet — and a POST is not idempotent, so the
+    # current set is read per issue rather than written over blindly.
+    if not dry_run:
+        ids = issue_ids()
+        for record in records:
+            add, remove = dependency_actions(record, blockers, numbers,
+                                             board_numbers)
+            if not add and not remove:
+                continue
+            number = numbers[record.issue_title]
+            print(f"  {record.issue_title}")
+            for blocker in add:
+                add_blocker(number, ids[blocker])
+                print(f"    blocked  + #{blocker} {titles.get(blocker, '')}".rstrip())
+                actions += 1
+            for blocker in remove:
+                remove_blocker(number, ids[blocker])
+                print(f"    blocked  - #{blocker} {titles.get(blocker, '')}".rstrip())
+                actions += 1
+            print()
 
     print(f"{'Dry run — nothing changed.' if dry_run else f'{actions} update(s) applied.'}")
     return 0
