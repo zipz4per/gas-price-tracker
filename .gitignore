@@ -81,3 +81,16 @@ signing_keys.json
 # Expo and editor local state
 .expo/
 .vscode/settings.json
+
+# --- Expo / React Native ---
+node_modules/
+dist/
+web-build/
+expo-env.d.ts
+.metro-health-check*
+*.tsbuildinfo
+npm-debug.*
+
+# generated native folders
+/ios
+/android

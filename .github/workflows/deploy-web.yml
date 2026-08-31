@@ -1,0 +1,69 @@
+# Publishes the web export to GitHub Pages.
+#
+# Configuration comes from repository VARIABLES, not secrets, and that is
+# deliberate. The Supabase URL and anon key are public identifiers that Expo
+# inlines into the bundle anyway — storing them as secrets would encrypt values
+# that are served to every visitor, and would imply a protection that does not
+# come from them. What protects the database is the grants and row-level
+# security behind the anon role.
+#
+# The service-role key appears nowhere in this file and must never be added to
+# it. It bypasses RLS entirely, and anything this workflow can read reaches a
+# public bundle.
+
+name: Deploy the web export
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time, and never cancel one midway: a half-published site is
+# worse than an old one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Export the web bundle
+        run: npx expo export --platform web
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+
+      # The export is built for the /gas-price-tracker/ subpath, set as
+      # expo.experiments.baseUrl in app.json. A mismatch between that and where
+      # Pages actually serves from produces a blank page with every asset
+      # loading correctly, which is a hard symptom to read backwards.
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
