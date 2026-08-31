@@ -98,7 +98,13 @@ Either change may land first. If this one does, the check is written into the su
 3. Brand rows for the pooled operators — Uno Fuel, Petro Gazz, Nitro, RePhil, Fuel Express, Maxfill — with `is_retailer = true`.
 4. Name normalization in `resolve_station_brand`, with the affix list, plus the rules for the new brands.
 5. Re-resolve existing stations, and report how many moved out of `INDEPENDENT`.
-6. Seed the catalogue from published lineups; set `products_verified_at`.
+6. ~~Seed the catalogue from published lineups; set `products_verified_at`.~~
+   **Split out as `seed-brand-fuel-products`.** Applying the sourcing rule
+   honestly produced no committable lineup: only Petron publishes one a machine
+   can read, and its two diesels are indistinguishable from any published
+   statement. What shipped instead is the sourcing attempt recorded per brand in
+   `brands.products_review_note`, and an empty catalogue — which the fallback
+   path already treats as first-class.
 7. `get_station_fuel_options`, with the two fallback cases.
 8. The uncatalogued-fuel rejection in the submission path, wherever it exists by then.
 

@@ -27,8 +27,14 @@
 ## 5. Seed the catalogue
 
 - [x] 5.1 Compile each national brand's current product lineup from that brand's own published pages, recording the source URL and the date consulted; verify every product name is attributable to a published page and none is recalled from memory or taken from a third-party summary
-- [ ] 5.2 *(Not done — nothing to insert. Sourcing under 5.1 produced no complete lineup for any brand; see `20260831180600_record_product_sourcing_attempts.sql`.)* Insert the catalogue rows with the brand's own presentation order, and set `products_verified_at` to the date of consultation; verify `brands_needing_product_review` is empty for the seeded brands afterwards
-- [ ] 5.3 *(Not done — no seeded lineups to verify. Blocked on 5.2.)* Verify the seeded lineups against the registry by checking that every fuel type DOE reports for a brand appears in that brand's product list, and investigate any that do not
+> **5.2 and 5.3 moved to `seed-brand-fuel-products`.** Inserting the catalogue
+> rows and verifying them against the reference data are blocked on something
+> this change cannot influence: no brand but Petron publishes a lineup a machine
+> can read, and Petron's two diesels cannot be told apart from any published
+> statement. Everything else here — the schema, the fallback, the review surface,
+> the submission check — is finished and running on the canonical-grade path.
+> Holding a completed change open until a brand redesigns its website serves
+> nobody, so the data task was split out with its own blocker.
 
 ## 6. Read path and submission
 
