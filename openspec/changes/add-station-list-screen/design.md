@@ -50,50 +50,76 @@ It takes the whole result row, never a number. There is no prop for a figure alo
 
 The same component renders the absent case. A row with no figure is not a different component and not a branch at the call site; it is the same component displaying the reason instead of a number.
 
-### Styling with NativeWind
+### Styling with `StyleSheet`
 
-React Native has no CSS, so Tailwind cannot be used directly. NativeWind is the
-route to it: Tailwind class names compiled to React Native styles at build time,
-working on native and on web from one source. That last property is why it fits
-here — a codebase targeting both would otherwise style them separately, which is
-the fork Expo was chosen to avoid.
+React Native has no CSS, so Tailwind cannot be used directly. The route to it is
+NativeWind, which compiles Tailwind class names into React Native styles at build
+time. It is not being used, and this records why and what would change the
+answer.
 
-**Adopted from the first component rather than later.** Two more screens are
-already scoped — the map and the submission flow — and the submission flow is
-the style-heavy one: forms, focus and disabled states, validation, a candidate
-picker. Starting with `StyleSheet` and converting when that arrives means a
-migration touching every component that renders anything, which is real work
-avoided entirely by choosing once.
+The whole styling surface of this screen is small enough to see at once:
 
-It also keeps the four price states legible where they matter. Observed,
-derived, reference and absent must be distinguishable at a glance, and utility
-classes put that difference in the markup beside the content it describes rather
-than in a separate block a reader has to hold in their head.
+```
+  row        flexDirection, justifyContent, padding
+  figure     fontSize, tabular numerals
+  observed / derived / reference / absent    a colour and a weight each
+  basis      smaller, dimmer, beneath the figure
+```
 
-**Three things this costs, recorded because they are facts rather than
-arguments:**
+Four price states and a row. A utility framework earns its place by making
+consistency cheap across many surfaces, and there is one here.
 
-Setup is five touchpoints — a Tailwind config with content globs, the Babel
-preset, the Metro wrapper, a global stylesheet, and a TypeScript declaration
-adding `className` to React Native components. All of it lands in project setup,
-which is already the stretch of this change with the longest gap between starting
-and having anything on screen.
+**What it would cost is concentrated in the riskiest place.** NativeWind needs a
+Tailwind config, a Babel preset, a Metro wrapper, a global stylesheet and a
+TypeScript declaration — five touchpoints, all in project setup, which is already
+the stretch of this change with the longest gap between starting and having
+anything on screen. It must also align with whatever Expo SDK
+`create-expo-app` installs, and a mismatch there fails the build with an error
+that names a file in the toolchain rather than the version that caused it.
 
-Version alignment with the Expo SDK is the thing that actually breaks. NativeWind
-majors track SDK ranges, so the version is taken from NativeWind's own
-documentation against whatever `create-expo-app` installs — never pinned from
-memory or copied from an older project.
+**And it introduces a translation layer that fails quietly.** React Native
+understands only part of Tailwind's vocabulary — there is no `grid`,
+pseudo-classes are limited, and there is no arbitrary-CSS escape hatch. A class
+with no equivalent is **silently inert**: no warning, no error, no style, just a
+missing instruction the build never mentions. On a first screen, where "nothing
+happened" already has several plausible causes, that is a poor property to add.
 
-Not all of Tailwind survives the translation. There is no `grid`, pseudo-classes
-are limited, and there is no arbitrary-CSS escape hatch: what remains is
-flexbox, spacing, colour, typography, and NativeWind's own additions. **A class
-with no React Native equivalent is silently inert** — it does not warn, it does
-nothing. On a first screen, where "nothing happened" already has several
-plausible causes, that is worth knowing before it is met.
+`StyleSheet` has neither problem. It is built in, so there is no version to align
+and no dependency to add, and it expresses exactly what React Native supports —
+nothing is quietly dropped in translation.
 
-**`StyleSheet` remains available and is not forbidden.** The two coexist, and
-anything Tailwind cannot express is written directly rather than approximated by
-a class that does not apply.
+**NativeWind can be adopted later, incrementally.** It coexists with
+`StyleSheet` and applies per component, so this is not a door closing. What
+follows is when to walk through it, stated as triggers someone can actually
+notice rather than as a feeling about repetition.
+
+**The moment you are about to write `theme.ts`.** A module exporting colours and
+spacing, imported everywhere, is a design system — a worse Tailwind, built by
+hand, with no tooling, no autocomplete, and a config nobody else maintains. If
+that file is about to exist, the decision has already been made; NativeWind is
+the same decision with the work done. This trigger is self-detecting, which is
+why it is first: you notice yourself creating the file.
+
+**Or: the same literal style value in three or more `StyleSheet.create` blocks.**
+Greppable, unlike the above. Two is coincidence; three is a system asking to
+exist.
+
+**The likely moment is the submission flow.** This screen is one component doing
+four states plus a row. The map is mostly a library's surface. The submission
+flow is the first with forms, focus and disabled states, validation, and a
+candidate picker — and the first where copying styles out of here becomes
+tempting. If that change finds itself reaching back into this one's styles, that
+is the answer arriving.
+
+**When it lands, it is its own change.** Adopting NativeWind touches build
+configuration and every component that renders anything; reviewed alongside new
+behaviour, neither is legible. A change that does only this can be verified by
+the app looking identical afterwards, which is the strongest available test for a
+styling migration and impossible if features moved at the same time.
+
+**And the answer may be never.** Utility CSS pays back on breadth. If this stays
+at two or three simple screens, `StyleSheet` carries it indefinitely and nobody
+suffers.
 
 ### The anon key ships in the bundle, and that is correct
 
@@ -136,21 +162,16 @@ The list renders as soon as rows arrive, ordered by brand and name. A location, 
 
 - **GitHub Pages serves from a subpath.** A wrong base URL yields a blank page with assets loading correctly, which is hard to diagnose from the symptom. → Set it explicitly and verify the deployed URL, not just the local export.
 
-- **Expo and React Native are the project's first runtime dependencies outside Postgres and Python.** A supply chain arrives with them, and NativeWind adds Tailwind to it. → Accepted; it is the cost of a client existing at all.
-
-- **A NativeWind version misaligned with the Expo SDK breaks the build before anything renders.** It is the most likely way project setup consumes a session. → Take the version from NativeWind's documentation against the SDK `create-expo-app` actually installs, and verify a styled component renders on both native and web before building anything on top of it.
-
-- **A Tailwind class with no React Native equivalent does nothing, silently.** No warning, no error, no style. → Verify the four price states are visually distinguishable rather than assuming the classes applied, and fall back to `StyleSheet` for anything Tailwind cannot express rather than approximating it.
+- **Expo and React Native are the project's first runtime dependencies outside Postgres and Python.** A supply chain arrives with them. → Accepted; it is the cost of a client existing at all, and no styling dependency is added on top of it.
 
 ## Migration Plan
 
 1. Expo app with TypeScript and expo-router at the repository root; `.gitignore` for `node_modules`, `dist`, `.expo`.
-2. NativeWind, with its version taken from its own documentation against the installed SDK, verified rendering on native and web before anything is built on it.
-3. Supabase client from `EXPO_PUBLIC_*` configuration, with a check that fails loudly when either variable is missing.
-4. Generated database types, committed, with the command to regenerate them documented.
-5. `StationPrice` — the only component that renders a figure, covering all four states.
-6. The list screen: locality and fuel type selection, rows, distances, and the location states.
-7. Web export and the GitHub Pages workflow; verify the deployed URL.
+2. Supabase client from `EXPO_PUBLIC_*` configuration, with a check that fails loudly when either variable is missing.
+3. Generated database types, committed, with the command to regenerate them documented.
+4. `StationPrice` — the only component that renders a figure, covering all four states.
+5. The list screen: locality and fuel type selection, rows, distances, and the location states.
+6. Web export and the GitHub Pages workflow; verify the deployed URL.
 
 Nothing here changes the database, so there is no rollback beyond reverting the commit.
 

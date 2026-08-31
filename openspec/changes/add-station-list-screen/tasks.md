@@ -2,20 +2,19 @@
 
 - [ ] 1.1 Create an Expo app with TypeScript and expo-router at the repository root; verify `npx expo start` runs and that `openspec/`, `supabase/`, `scripts/` and `docs/` are untouched
 - [ ] 1.2 Add `node_modules`, `dist`, `.expo` and Expo's generated artefacts to `.gitignore`; verify `git status` is clean after an install and a web export
-- [ ] 1.3 Add NativeWind with its Tailwind config, Babel preset, Metro wrapper, global stylesheet and `className` type declaration, taking the version from NativeWind's own documentation against the SDK `create-expo-app` installed; verify a styled component renders correctly on both a native target and the web export before anything is built on top of it
-- [ ] 1.4 Add `@supabase/supabase-js` and a client built from `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY`, failing loudly at startup when either is missing; verify the failure message names the missing variable rather than surfacing as a network error later
-- [ ] 1.5 Verify no variable holding a secret carries an `EXPO_PUBLIC_` prefix, and that the service-role key appears nowhere in the app source, `app.config`, or any build configuration
-- [ ] 1.6 Generate database types with `supabase gen types typescript`, commit them, and document the regeneration command; verify the generated `station_price_result` shape matches the function's actual columns
+- [ ] 1.3 Add `@supabase/supabase-js` and a client built from `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY`, failing loudly at startup when either is missing; verify the failure message names the missing variable rather than surfacing as a network error later
+- [ ] 1.4 Verify no variable holding a secret carries an `EXPO_PUBLIC_` prefix, and that the service-role key appears nowhere in the app source, `app.config`, or any build configuration
+- [ ] 1.5 Generate database types with `supabase gen types typescript`, commit them, and document the regeneration command; verify the generated `station_price_result` shape matches the function's actual columns
 
 ## 2. The price component
 
+- [ ] 2.0 Style with `StyleSheet` and add no styling dependency; verify the four price states are visually distinguishable from one another and that no Tailwind or NativeWind package is installed
 - [ ] 2.1 Implement `StationPrice`, taking a whole result row and rendering the figure, its kind, and the supplied statement together; verify no prop accepts a bare figure and no exported helper formats a price on its own
 - [ ] 2.2 Render the observed case with its report count and how recently it was observed; verify the age is shown relative to now and the count accompanies it
 - [ ] 2.3 Render the derived case so it reads as carried forward rather than observed, with the observation's date available; verify the wording is the statement the read path supplied and not composed by the component
 - [ ] 2.4 Render the reference case as a range across the locality, carrying the proxy attribution where one applies; verify a Malvar station names Tanauan City as the source
 - [ ] 2.5 Render the absent case in the same component, showing the supplied reason and no numeric value; verify nothing displays a zero, a blank, or an em dash where a price would be
-- [ ] 2.6 Verify the four price states are visually distinguishable from one another, rather than assuming the classes applied; a Tailwind class with no React Native equivalent is silently inert, so check the rendered result and use `StyleSheet` for anything Tailwind cannot express
-- [ ] 2.7 Add a test asserting that for each of the four states the rendered output contains the statement the row supplied; verify the test fails if the statement is removed from the component
+- [ ] 2.6 Add a test asserting that for each of the four states the rendered output contains the statement the row supplied; verify the test fails if the statement is removed from the component
 
 ## 3. The list screen
 
