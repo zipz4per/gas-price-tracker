@@ -1,9 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 
 import { ChoiceRow } from '@/components/ChoiceRow';
 import { StationRow } from '@/components/StationRow';
 import { distanceMetres } from '@/lib/distance';
+import {
+  CONTENT_MAX_WIDTH,
+  GRID_GAP,
+  SCREEN_PADDING,
+  cardWidthFor,
+  columnsFor,
+} from '@/lib/grid';
 import { fetchFuelTypes, fetchLocalities, type FuelType, type Locality } from '@/lib/registry';
 import { fetchStationPrices, type StationPriceRow } from '@/lib/stationPrices';
 import { useDeviceLocation, type DeviceLocation } from '@/lib/useDeviceLocation';
@@ -83,18 +97,26 @@ export default function StationListScreen() {
   // location turns up. It is never waiting on one.
   const listed = useMemo(() => order(rows, location), [rows, location]);
 
+  // How many stations fit beside each other. On a phone this is always one and
+  // the layout is the list it always was; a browser window is simply wider, and
+  // a single column stretched across it is a phone screen someone has pulled
+  // out of shape.
+  const { width } = useWindowDimensions();
+  const columns = columnsFor(width);
+  const cardWidth = cardWidthFor(width, columns);
+
   const localityLabel = locality ?? '—';
   const fuelLabel = fuelTypes?.find((fuel) => fuel.code === fuelType)?.display_name ?? fuelType ?? '—';
   const attribution = rows?.find((row) => row.station_attribution !== null)?.station_attribution;
 
   return (
-    <FlatList
-      testID="station-list"
-      style={styles.screen}
-      data={listed ?? []}
-      keyExtractor={(item) => item.row.station_id ?? `${item.row.provider_place_id}`}
-      renderItem={({ item }) => <StationRow row={item.row} distance={item.distance} />}
-      ListHeaderComponent={
+    <View style={styles.screen}>
+      <View style={styles.column}>
+        {/*
+          Outside the list, so it stays put. Fifty-two stations is far enough to
+          scroll that a reader who wants a different fuel type should not have
+          to travel back to the top to ask for one.
+        */}
         <View style={styles.header}>
           <Text style={styles.subject}>
             {fuelLabel} in {localityLabel}
@@ -121,30 +143,50 @@ export default function StationListScreen() {
 
           <Text style={styles.ordering}>{orderingNote(location)}</Text>
         </View>
-      }
-      ListEmptyComponent={
-        <View style={styles.notice}>
-          {failure !== null ? (
-            <Text style={styles.failure}>{failure}</Text>
-          ) : (
-            <>
-              <ActivityIndicator />
-              <Text style={styles.loading}>Loading stations…</Text>
-            </>
+
+        <FlatList
+          testID="station-list"
+          data={listed ?? []}
+          // React Native cannot change the column count of a live list, so a
+          // window crossing a threshold remounts it rather than reflowing it.
+          key={`columns-${columns}`}
+          numColumns={columns}
+          keyExtractor={(item) => item.row.station_id ?? `${item.row.provider_place_id}`}
+          renderItem={({ item }) => (
+            <StationRow
+              row={item.row}
+              distance={item.distance}
+              layout={columns > 1 ? 'card' : 'row'}
+              width={cardWidth}
+            />
           )}
-        </View>
-      }
-      ListFooterComponent={
-        attribution != null ? (
+          columnWrapperStyle={columns > 1 ? styles.gridRow : undefined}
+          contentContainerStyle={columns > 1 ? styles.grid : undefined}
+          ListEmptyComponent={
+            <View style={styles.notice}>
+              {failure !== null ? (
+                <Text style={styles.failure}>{failure}</Text>
+              ) : (
+                <>
+                  <ActivityIndicator />
+                  <Text style={styles.loading}>Loading stations…</Text>
+                </>
+              )}
+            </View>
+          }
+        />
+
+        {attribution != null ? (
           <View style={styles.footer}>
             {/* Station positions and names come from OpenStreetMap, whose ODbL
-                requires the attribution wherever they are shown. The rows carry
-                the wording; this displays it. */}
+                requires the attribution wherever they are shown. Pinned rather
+                than trailing the list, so it is on screen with the data it
+                covers instead of fifty-two rows below it. */}
             <Text style={styles.attribution}>{attribution}</Text>
           </View>
-        ) : null
-      }
-    />
+        ) : null}
+      </View>
+    </View>
   );
 }
 
@@ -218,15 +260,30 @@ function messageOf(error: unknown): string {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+    alignItems: 'center',
     backgroundColor: '#FFFFFF',
   },
+  // A reading column. Past its width a line of prose is harder to follow, not
+  // easier, and the basis sentence is the longest thing on the screen.
+  column: {
+    flex: 1,
+    width: '100%',
+    maxWidth: CONTENT_MAX_WIDTH,
+  },
   header: {
-    paddingHorizontal: 16,
+    paddingHorizontal: SCREEN_PADDING,
     paddingTop: 12,
     paddingBottom: 14,
     gap: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#D8D8D8',
+  },
+  grid: {
+    padding: SCREEN_PADDING,
+    gap: GRID_GAP,
+  },
+  gridRow: {
+    gap: GRID_GAP,
   },
   subject: {
     fontSize: 20,
@@ -252,7 +309,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   footer: {
-    padding: 16,
+    paddingHorizontal: SCREEN_PADDING,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#D8D8D8',
   },
   attribution: {
     fontSize: 11,

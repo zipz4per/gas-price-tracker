@@ -10,13 +10,22 @@ import type { StationPriceRow } from '@/lib/stationPrices';
  *
  * `distance` is null until a location arrives, and stays null if none ever
  * does. It is the only thing on this row that depends on the device.
+ *
+ * `layout` is the shape the list has room for, decided by the list rather than
+ * here: a full-bleed row separated by hairlines when there is one column, a
+ * bordered card of a fixed width when they sit side by side. Same content
+ * either way — a card and a row differ in their edges, not in what they say.
  */
 export function StationRow({
   row,
   distance,
+  layout = 'row',
+  width,
 }: {
   row: StationPriceRow;
   distance: number | null;
+  layout?: 'row' | 'card';
+  width?: number;
 }) {
   // A locality holds a dozen Petrons all called "Petron". The address, where
   // the provider supplied one, is often the only thing telling two of them
@@ -25,7 +34,14 @@ export function StationRow({
   const showBrand = row.brand_display !== null && row.brand_display !== identity;
 
   return (
-    <View style={styles.row} testID="station-row">
+    <View
+      testID="station-row"
+      style={[
+        styles.base,
+        layout === 'card' ? styles.card : styles.row,
+        width !== undefined ? { width } : null,
+      ]}
+    >
       <View style={styles.identity}>
         <View style={styles.names}>
           <Text style={styles.name} testID="station-name">
@@ -50,12 +66,21 @@ export function StationRow({
 }
 
 const styles = StyleSheet.create({
+  base: {
+    gap: 6,
+  },
   row: {
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#D8D8D8',
-    gap: 6,
+  },
+  card: {
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E2E2',
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
   },
   identity: {
     flexDirection: 'row',

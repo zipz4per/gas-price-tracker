@@ -3,9 +3,11 @@
 // exports as a real page and ships in the build.
 
 import { render, screen, waitFor, within } from '@testing-library/react-native';
+import { Dimensions, StyleSheet } from 'react-native';
 
 import StationListScreen from '@/app/index';
 import { formatDistance } from '@/lib/distance';
+import { cardWidthFor, columnsFor } from '@/lib/grid';
 import { fetchFuelTypes, fetchLocalities } from '@/lib/registry';
 import { fetchStationPrices, type StationPriceRow } from '@/lib/stationPrices';
 import { useDeviceLocation, type DeviceLocation } from '@/lib/useDeviceLocation';
@@ -144,12 +146,21 @@ function atLocation(location: DeviceLocation) {
   mockLocation.mockReturnValue(location);
 }
 
+const DEFAULT_WINDOW = Dimensions.get('window');
+
+/** Resize the window the screen thinks it is being rendered into. */
+function windowWidth(width: number) {
+  const size = { ...DEFAULT_WINDOW, width };
+  Dimensions.set({ window: size, screen: size });
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockLocalities.mockResolvedValue(LOCALITIES);
   mockFuelTypes.mockResolvedValue(FUEL_TYPES);
   mockPrices.mockResolvedValue(RON_95_ROWS);
   atLocation({ status: 'pending' });
+  Dimensions.set({ window: DEFAULT_WINDOW, screen: DEFAULT_WINDOW });
 });
 
 /**
@@ -286,6 +297,50 @@ describe('the station list screen', () => {
         'Sorted by brand and name. Distances are not shown because this device did not provide a location.',
       ),
     ).toBeOnTheScreen();
+  });
+
+  // The layout answers to the width it is given, not to a guess about the
+  // device: the same screen is a phone's single column and a browser's grid of
+  // cards, and every station is in it either way.
+  it.each([
+    ['a phone', 390, 1],
+    ['a laptop', 1024, 2],
+    ['a wide browser window', 1440, 3],
+  ])('lays out %s in %i px as %i column(s)', async (_what, width, columns) => {
+    windowWidth(width);
+    await render(<StationListScreen />);
+
+    expect(await loaded()).toHaveLength(52);
+    expect(columnsFor(width)).toBe(columns);
+
+    const first = StyleSheet.flatten(screen.getAllByTestId('station-row')[0].props.style);
+
+    if (columns === 1) {
+      // A full-bleed row taking whatever width there is, separated from the
+      // next by a hairline.
+      expect(first.width).toBeUndefined();
+      expect(first.borderBottomWidth).toBe(StyleSheet.hairlineWidth);
+    } else {
+      // A card of a settled width, so the last row of a grid that does not
+      // divide evenly does not stretch one station across the whole window.
+      expect(first.width).toBeCloseTo(cardWidthFor(width, columns)!, 6);
+      expect(first.borderRadius).toBeGreaterThan(0);
+    }
+  });
+
+  it('keeps the subject, the selectors and the attribution out of the scrolling list', async () => {
+    await render(<StationListScreen />);
+    await loaded();
+
+    // The header and the attribution are siblings of the list, not its header
+    // and footer components, so neither scrolls away from a reader forty rows
+    // into fifty-two.
+    const list = screen.getByTestId('station-list');
+    expect(list.props.ListHeaderComponent).toBeUndefined();
+    expect(list.props.ListFooterComponent).toBeUndefined();
+
+    expect(screen.getByText('RON 95 in Lipa City')).toBeOnTheScreen();
+    expect(screen.getByText('© OpenStreetMap contributors')).toBeOnTheScreen();
   });
 
   it('displays the OpenStreetMap attribution the rows carry', async () => {
