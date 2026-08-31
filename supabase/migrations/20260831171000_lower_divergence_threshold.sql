@@ -1,0 +1,26 @@
+-- Lower the divergence threshold from P1.50 to P1.00.
+--
+-- P1.50 was chosen before the check could be measured. Once it could, it turned
+-- out to sit above the failure it most needs to catch: a one-tenth misread
+-- leaves a divergence of nine tenths of the announced amount, so at P1.50 it is
+-- only caught when the announcement exceeded P1.67 - and real weekly adjustments
+-- are often P0.30 to P2.00.
+--
+-- Measured on the synthetic second period used to test this change:
+--
+--   agreement                        0.00   below
+--   one town's survey shifts +1.50   0.75   below
+--   missed adjustment +1.00          1.00   below, marginally
+--   one-tenth misread 1.20 -> 0.12   1.08   ABOVE at P1.00, below at P1.50
+--   sign error -1.20 read as +1.20   2.40   above
+--   one-tenth misread 3.83 -> 0.38   3.45   above
+--   one town's survey shifts +5.00   2.50   above  (a false alarm either way)
+--
+-- The cost is accepted deliberately: a single locality whose DOE sample shifts
+-- by about P2.00 now produces a median of P1.00 and lands on the line. That is
+-- the failure direction to prefer. A divergence is surfaced for a person to
+-- interpret, never resolved automatically, so an occasional flag to inspect and
+-- discard is cheaper than a misread amount moving every derived price of a grade
+-- with nothing to notice it.
+
+update public.adjustment_feed_settings set divergence_threshold = 1.00;
