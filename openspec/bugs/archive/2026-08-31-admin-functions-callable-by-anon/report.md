@@ -107,11 +107,30 @@ consequence.
 
 ## Fixed by
 
-_Pending._
+`5036072  Close three admin functions that anon could call`
 
 ## What the fix changed
 
-_Pending._
+`correct_price_adjustment`, `compare_feed_to_reference` and
+`check_brand_name_normalization` now revoke from `public, anon, authenticated`
+rather than from `public` alone. `has_function_privilege('anon', ...)` is false
+for all three, locally and on hosted, and a call as `anon` raises *permission
+denied* leaving the adjustment's amount unchanged. The four functions meant for
+clients — `get_station_prices`, `submit_price_report`, `stations_within_radius`,
+`get_station_fuel_options` — are untouched and still work for `anon`.
+
+Sixteen functions exist in `public`; twelve are anon-executable and all twelve
+are intended.
+
+**No scenario would have caught this**, and that is worth saying plainly rather
+than claiming otherwise. The specs describe behaviour a caller observes, and
+this defect is invisible from inside the function: `correct_price_adjustment`
+does exactly what its requirement says, for a caller who should never have
+reached it. What guards it instead is a check, not a scenario —
+`docs/database-conventions.md` carries the query that lists every function
+against every role, and the instruction to read it whole rather than filtered,
+because the mistake looks identical to the intended state until you know which
+is which.
 
 ## Does this need a change?
 
@@ -126,4 +145,4 @@ grant did not deliver it. Fix and verify.
 - [x] 1.3 Audit every `SECURITY DEFINER` and service_role-only function in the schema for the same pattern, and report any others found
 - [x] 1.4 Verify the public read and submission paths still work for `anon` — `get_station_prices`, `submit_price_report`, `stations_within_radius`, `get_station_fuel_options`
 - [x] 1.5 Record the correct grant pattern where the next person will meet it, so `revoke ... from public` is not copied again
-- [ ] 1.6 Push to hosted and re-verify there
+- [x] 1.6 Push to hosted and re-verify there
