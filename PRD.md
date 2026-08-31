@@ -66,17 +66,22 @@ Station data (name, brand, address, coordinates) comes from an external places p
 ## 7. Functional Requirements
 
 ### 7.1 Price Viewing
-- FR-1: Show a list (and, if feasible, a map) of gas stations in any covered locality with the latest crowdsourced price per fuel type (RON 91/95/97/100, Diesel, Diesel Plus where applicable).
-- FR-2: Each station detail view shows: brand, address/barangay, per-fuel-type latest price with timestamp and relative age ("reported 3 hours ago"), and — **where one exists** — the DOE reference min/max/common price for that fuel type, labeled as a locality-wide range for that brand rather than as a price observed at this station, and carrying the proxy attribution where one applies (Malvar's figures are sourced from Tanauan City).
-- FR-3: A station has three possible states for a fuel type, and all three must be shown explicitly rather than collapsed into two — never a blank or broken screen:
+- FR-1: Show a list (and, if feasible, a map) of gas stations in any covered locality with the current price per fuel type (RON 91/95/97/100, Diesel, Diesel Plus, Kerosene). Every price carries a declared **kind** — see FR-3 — and no surface may show a figure without it.
+- FR-2: Each station detail view shows: brand, address/barangay, and per fuel type a single price slot carrying the figure, its kind, and the sentence that says what it is. For an observed or derived price that sentence names when it was observed and how many reports support it; for a reference range it names the locality the range spans and the proxy attribution where one applies (Malvar's figures are sourced from Tanauan City). The sentence is produced by the system, not assembled by the client.
+- FR-3: A station has **one** price slot per fuel type, filled from the highest rung available. All four states are shown explicitly rather than collapsed — never a blank or broken screen:
 
-  | State | What is shown |
-  |---|---|
-  | A crowdsourced report exists | the reported price, with timestamp and relative age |
-  | No report, but DOE prices this brand here | the DOE brand range, labelled, with a "no recent reports" state |
-  | No report and DOE does not price this brand here | an explicit no-reference-data state — not a zero, a blank, or a hidden station |
+  | Kind | When | What is shown |
+  |---|---|---|
+  | `observed` | someone reported a price at this station | the reported price, its age, and the number of reports on record |
+  | `derived` | an earlier report here, carried across announced price adjustments | the adjusted figure, the observation it descends from, its date, and how many adjustments were applied |
+  | `reference` | nobody has reported here | the DOE **locality-wide range across all brands**, labelled as such, shifted by any adjustments since the reporting period closed |
+  | *(none)* | no report and no reference figure | an explicit reason — not a zero, a blank, or a hidden station |
 
-  The third is not an edge case. DOE prices only the brands it happened to monitor, so on the survey behind the station registry at least 37 of 153 stations fall into it. A station stays on the map when DOE prices no brand of its kind in its locality; the reference price is the value that may be absent, never the station.
+  Two things this replaces. The reference figure is **not** the station's brand range: within one locality a brand range resolves to a single number repeated across every station of that brand, so a map that appears to compare stations would be comparing brands. And a station's brand is no longer a reason for having no figure — the locality-wide range covers every station, including the 17 of 96 whose brands DOE never prices.
+
+  The fourth state is not an edge case. It is driven by fuel type rather than by brand: DOE publishes no figure at all for RON 97, RON 100, or Diesel Plus in any covered locality, so every station shows the explicit no-data state for those three.
+
+  A derived price stops being shown once it is too far from any observation — a bounded number of adjustments, or a bounded number of days, whichever binds first — after which the station falls back to the reference range. The day bound is what ages an observation out when the adjustment feed has stopped, since the adjustment count cannot advance while nothing is being ingested.
 - FR-4: Support pull-to-refresh and basic sort (e.g., cheapest first per fuel type).
 
 ### 7.2 Price Submission

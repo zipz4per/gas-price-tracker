@@ -8,9 +8,15 @@ select * from stations_needing_brand_review;
 
 **A non-empty list is the normal state, not a failure.** The rules surface what
 they cannot resolve rather than guessing, because a station filed under the wrong
-brand is shown the wrong brand's reference price — a wrong number attached to a
-real place — and a station dropped for being unrecognised is a hole in the map
-with nothing to indicate it. So an unresolved station is registered, shown, and
+brand is labelled as a brand it is not, and a station dropped for being
+unrecognised is a hole in the map with nothing to indicate it.
+
+> Corrected 2026-08-31 by `add-price-reports`. A wrong brand no longer produces a
+> wrong *price*: a station's reference figure is now the locality-wide range
+> across all brands, so it does not consult the station's brand at all. The
+> consequence of a wrong brand is a wrong label, and — once
+> `add-brand-fuel-products` lands — the wrong product names on the submission
+> form. So an unresolved station is registered, shown, and
 listed here.
 
 Each entry is settled one of two ways: **add a rule**, or **record why it stays

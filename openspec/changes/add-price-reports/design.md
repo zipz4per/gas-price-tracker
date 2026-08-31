@@ -123,6 +123,21 @@ So the useful comparison is aggregate rather than per-report: the median of crow
 
 - **Coordinates could survive in Postgres logs even though no column holds them.** With `log_statement = 'all'` or `log_min_duration_statement` low, the submission call's arguments are written to the server log, which defeats the design's privacy property. → Verify logging settings on the hosted project, keep the submission call parameterized rather than string-interpolated, and treat this as part of the change rather than an operational afterthought.
 
+  **Verified 2026-08-31, and the risk is real.** Both the local stack and the hosted project run `log_statement = ddl`, `log_min_duration_statement = -1`, `log_min_error_statement = error`, and `log_parameter_max_length_on_error = 0`. Successful calls are therefore never logged. Failing ones are — and what reaches the log depends entirely on how the call was written:
+
+  ```
+  interpolated SQL, call fails
+    STATEMENT: select public.submit_price_report(..., 13.94761234, 121.15412345)
+    -> coordinates in the log, verbatim
+
+  PostgREST rpc with bound parameters, call fails
+    ERROR: not at Petron: 10126 m away, limit is 150 m
+    -> no STATEMENT line, no values; log_parameter_max_length_on_error = 0
+       suppresses bind parameters
+  ```
+
+  So the privacy property holds for the real client path and is defeated by any caller that builds SQL by string interpolation. `log_parameter_max_length_on_error = 0` is load-bearing and should not be raised.
+
 - **A dead adjustment feed makes stale observations look current.** → The 35-day wall-clock condition on carry-forward. Also worth surfacing feed silence explicitly, per the discipline `distinguish-absent-doe-data` established.
 
 - **A national delta is applied to every locality equally.** Regional differences exist and are usually small. → Bounded by the carry-forward limit; a fresh report resets the error to zero.
