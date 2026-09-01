@@ -11,8 +11,9 @@ There is a second reason to build the screen rather than more backend. The rule 
 - **Introduce the client application**, as an Expo project exporting to native and to the web from one codebase. The web export is what makes the work visible: a public repository of migrations and specs has nothing a reader can click.
 - **Ship one screen end to end** — choose a locality and a fuel type, see every station in it, ordered by distance where location is available.
 - **Show the kind of every price, always.** Observed, derived, and reference are three different claims, and the screen displays the system's own sentence rather than composing its own. A bare figure with no statement of what it is must not be renderable.
-- **Show stations with no price rather than hiding them.** For RON 95, 95 of 96 stations currently show a locality reference range and one shows an observed report; for RON 97 every station shows an explicit absence. A station missing from the list is worse than a station with nothing to say.
+- **Show stations with no price rather than hiding them.** For RON 95, all 96 stations currently show a locality reference range — there is not one observed report in the system yet; for RON 97 every station shows an explicit absence. A station missing from the list is worse than a station with nothing to say.
 - **Order by distance when location is available, and stay useful when it is not.** Location is what distinguishes twelve Lipa Petrons that share a name; without it the list must still be ordered by something a person can navigate.
+- **Lay the list out for the window it is in.** The same codebase is a phone app and a page in a browser, and a phone list stretched across a desktop window reads as an unfinished port rather than a design. The column count follows the window's width against a minimum readable card width; the selectors and the attribution are pinned above and below the list rather than scrolling with it. One code path, no platform branch, and every phone width resolves to the single-column layout that already existed.
 - **Read from the hosted project with the anon key**, which is public by design and ships in the bundle. The protection is the grants and RLS behind it, not the secrecy of that key — a distinction worth stating plainly because a key in a client bundle looks like a leak.
 
 ### Explicitly out of scope
@@ -21,7 +22,7 @@ There is a second reason to build the screen rather than more backend. The rule 
 - **Submitting a price.** The backend accepts one and the flow needs GPS authorization, a candidate picker, and the brand's product names; that is its own change.
 - **Choosing a locality from GPS.** Nothing maps coordinates to a locality, and at three localities the client can fetch all of them and sort. A proximity read path earns its place when coverage grows, not now.
 - **Offline behaviour and caching.** NFR-2 asks for a usable cached state; it is real work and does not belong in the first screen.
-- **Design system, theming, and visual polish** beyond what the content requires.
+- **A design system and a visual language.** The screen is laid out for the window it is in, because a list that is unreadable on a desktop is not a finished screen. What is deferred is everything above that line — a theme, a colour system, a shared component library — which needs more than one screen to be worth designing.
 
 ## Capabilities
 
@@ -35,7 +36,7 @@ None. Every read path this screen consumes is unchanged.
 
 ## Impact
 
-- **New:** an Expo application at the repository root, with a web export target and a static deploy for it.
+- **New:** an Expo application at the repository root, with application code under `src/`, a web export target, and a static deploy for it.
 - **New:** a dependency on `@supabase/supabase-js`, and on Expo and React Native — the project's first runtime dependencies outside Postgres and Python.
 - **New:** configuration carrying the Supabase URL and anon key, read from the environment and never committed. `.env.local` already holds hosted credentials and remains untracked; the service-role key must never reach the client, which is the one credential distinction that matters here.
 - **Depends on:** `price-reports` for `get_station_prices`, `station-registry` for the stations it returns, and `locality-registry` for the localities offered.
