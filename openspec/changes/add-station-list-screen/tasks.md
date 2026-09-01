@@ -44,7 +44,7 @@
 - [x] 5.1 Produce a web export with `expo export --platform web` and the base URL set for a GitHub Pages subpath; verify the export loads from that subpath rather than only from the local root
 - [x] 5.2 Add a GitHub Actions workflow publishing the export to Pages, with the Supabase URL and anon key supplied from repository configuration; verify the workflow does not reference the service-role key
 - [ ] 5.3 Verify the deployed site loads real data from the hosted project, and that the deployed URL — not just the local export — renders the list
-- [ ] 5.4 Verify the deployed bundle contains the anon key and does not contain the service-role key, by searching the built assets for both
+- [x] 5.4 Verify the deployed bundle contains the anon key and does not contain the service-role key, by searching the built assets for both
 
 ## 6. Documentation
 
